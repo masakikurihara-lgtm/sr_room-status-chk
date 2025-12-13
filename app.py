@@ -381,17 +381,21 @@ def display_room_status(profile_data, input_room_id):
     .stHtml .dataframe tr {
         text-align: center !important; 
     }
+
+    /* 🔥 修正箇所: 見出し（th）のテキストアライメントを強制的に中央に設定 */
     .stHtml .dataframe th {
         background-color: #e8eaf6; 
         color: #1a237e; 
         font-weight: bold;
         padding: 8px 10px; 
         font-size: 14px;
-        /* ヘッダーのデフォルトは中央寄せを維持 */
-        text-align: center !important; 
+        /* 見出し全体を中央寄せに統一 */
+        text-align: center !important; /* <--- この行を明確に追加/強調 */
         border-bottom: 2px solid #c5cae9; 
         white-space: nowrap;
     }
+    /* 🔥 修正箇所ここまで */
+    
     .stHtml .dataframe td {
         padding: 6px 10px; 
         font-size: 13px; 
@@ -419,7 +423,7 @@ def display_room_status(profile_data, input_room_id):
     .stHtml .dataframe th:nth-child(4), .stHtml .dataframe td:nth-child(4), /* フォロワー数 */
     .stHtml .dataframe th:nth-child(5), .stHtml .dataframe td:nth-child(5), /* まいにち配信 */
     .stHtml .dataframe th:nth-child(9), .stHtml .dataframe td:nth-child(9) { /* ポイント */
-        text-align: center !important; /* 中央右寄せ */
+        text-align: center !important; /* 中央寄せに統一 */
         width: 10%; 
     }
 
