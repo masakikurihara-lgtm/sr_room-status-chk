@@ -6,6 +6,7 @@ import datetime
 from dateutil import parser
 import numpy as np
 import re
+import json # JSON出力をきれいにするためにインポート
 
 # Streamlit の初期設定
 st.set_page_config(
@@ -114,11 +115,16 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     上位10ルームについては、個別のプロフィールAPIを叩いて詳細情報を統合する。
     """
     if not event_id:
-        return {"total_entries": "-", "rank": "-", "point": "-", "level": "-", "top_participants": []}
+        # 🚨 生APIデータデバッグのためにキーを追加
+        return {"total_entries": "-", "rank": "-", "point": "-", "level": "-", "top_participants": [], "raw_api_data_sample": "N/A"}
 
     total_entries = get_total_entries(event_id)
     room_list_data = get_event_room_list_data(event_id)
     current_room_data = None
+    
+    # --- 🔥 デバッグ情報として生APIデータのサンプルを抽出 (先頭3件) ---
+    raw_api_data_sample = room_list_data[:3]
+    # -----------------------------------------------------------------
     
     # ターゲットルームの情報をリストから探す
     for room in room_list_data:
@@ -128,7 +134,19 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
 
     rank = _safe_get(current_room_data, ["rank"], "-")
     point = _safe_get(current_room_data, ["point"], "-")
-    level = _safe_get(current_room_data, ["quest_level"], "-")
+    
+    # 🚨 修正: `quest_level` が `None` の問題に対応するため、複数の候補キーからレベル情報を取得する
+    level = None
+    level_keys = ["quest_level", "level", "event_level", "event_rank_info"] # 候補キー
+    for key in level_keys:
+        level = _safe_get(current_room_data, [key], None)
+        if level is not None and level != "-":
+            break
+    
+    if level is None:
+        level = "-"
+    
+    # ... (以下のロジックは変更なし) ...
 
     top_participants = room_list_data
     # 要件: ポイントの高い順にソート
@@ -165,6 +183,20 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
                 if not participant.get('room_name'):
                      participant['room_name'] = _safe_get(profile, ["room_name"], f"Room {room_id}")
         
+        
+        # 🔥 エンリッチ後、`quest_level` がNoneの場合、他の候補キーをチェック
+        if _safe_get(participant, ["quest_level"], None) is None:
+             # `get_event_participants_info` の冒頭でチェックしたキーを、ここでも適用
+             for key in level_keys:
+                 if key in participant and _safe_get(participant, [key], None) is not None:
+                     participant['quest_level'] = _safe_get(participant, [key], None)
+                     break
+        
+        # 最終的に`quest_level`がセットされていない場合、ここでキーを追加（DataFrame化でエラーが出ないように）
+        if 'quest_level' not in participant:
+             participant['quest_level'] = None
+
+
         enriched_participants.append(participant)
 
     # 応答に必要な情報を返す
@@ -173,7 +205,8 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
         "rank": rank,
         "point": point,
         "level": level,
-        "top_participants": enriched_participants # エンリッチされたリストを返す
+        "top_participants": enriched_participants, # エンリッチされたリストを返す
+        "raw_api_data_sample": raw_api_data_sample # 🚨 生データデバッグ情報
     }
 # --- イベント情報取得関数群ここまで ---
 
@@ -183,6 +216,7 @@ def display_room_status(profile_data, input_room_id):
     
     # データを安全に取得
     room_name = _safe_get(profile_data, ["room_name"], "取得失敗")
+    # ... (他の基本情報取得は省略) ...
     room_level = _safe_get(profile_data, ["room_level"], "-")
     show_rank = _safe_get(profile_data, ["show_rank_subdivided"], "-")
     next_score = _safe_get(profile_data, ["next_score"], "-")
@@ -345,13 +379,10 @@ def display_room_status(profile_data, input_room_id):
         unsafe_allow_html=True
     )
     
-    # --- 2. 📊 ルーム基本情報（第一カテゴリー） ---
+    # ... (ルーム基本情報表示は省略) ...
     st.markdown("### 📊 ルーム基本情報")
-    
-    # カラム間のギャップを調整し、PCでの視覚的なスカスカ感を軽減
     col1, col2, col3, col4 = st.columns([1.5, 1.5, 1.5, 1.5]) 
 
-    # ▼ 左側：レベル/フォロワー/配信日数
     with col1:
         custom_metric("ルームレベル", f'{room_level:,}' if isinstance(room_level, int) else str(room_level))
         custom_metric("フォロワー数", f'{follower_num:,}' if isinstance(follower_num, int) else str(follower_num))
@@ -360,7 +391,6 @@ def display_room_status(profile_data, input_room_id):
         custom_metric("まいにち配信（日数）", live_continuous_days)
         custom_metric("公式 or フリー", official_status)
 
-    # ▼ 右側：SHOWランク関連情報
     with col3:
         custom_metric("現在のSHOWランク", show_rank)
         custom_metric("ジャンル", genre_name)
@@ -382,6 +412,7 @@ def display_room_status(profile_data, input_room_id):
     ended_at_ts = event.get("ended_at")
 
     if event_id and event_name:
+        
         # タイムスタンプを日本時間（JST）の文字列に変換
         def _ts_to_jst_str(ts):
             if ts:
@@ -406,12 +437,14 @@ def display_room_status(profile_data, input_room_id):
 
         # イベント参加情報（API取得）
         with st.spinner("イベント参加情報を取得中..."):
+            # 🚨 get_event_participants_info の戻り値に raw_api_data_sample が追加されている
             event_info = get_event_participants_info(event_id, input_room_id, limit=10)
             
             total_entries = event_info["total_entries"]
             rank = event_info["rank"]
             point = event_info["point"]
             level = event_info["level"]
+            raw_api_data_sample = event_info["raw_api_data_sample"] # 🚨 新しいデバッグ情報
             
             # イベント参加情報表示 (4カラムで横並び) - st.metric を使用
             st.markdown("#### 参加状況（自己ルーム）")
@@ -430,6 +463,17 @@ def display_room_status(profile_data, input_room_id):
 
         st.divider()
 
+        # --- 🚨 新しいデバッグ情報表示セクション ---
+        st.markdown("### 🔴 API生データサンプル（イベント参加情報）")
+        if raw_api_data_sample and raw_api_data_sample != "N/A":
+            st.warning("この情報には、レベル情報の正しいキー名が含まれている可能性があります。")
+            json_str = json.dumps(raw_api_data_sample, indent=2, ensure_ascii=False)
+            st.code(json_str, language='json')
+        else:
+            st.info("API生データサンプルは取得できませんでした。")
+        st.markdown("---")
+        # ----------------------------------------
+        
         # --- 4. 🔝 参加イベント上位10ルーム（HTMLテーブル） ---
         st.markdown("### 🔝 参加イベント上位10ルーム")
         
@@ -485,14 +529,12 @@ def display_room_status(profile_data, input_room_id):
             def _fmt_int_for_display(v, use_comma=True):
                 """
                 数値を整形する。None, NaN, 空文字列の場合はハイフンを返す。
-                有効な数値の場合は、カンマ区切りを適用するか、そのまま返す。
                 """
                 try:
                     # None, NaN, 空文字列の場合にハイフン "-" を返す
                     if v is None or (isinstance(v, (str, float)) and (str(v).strip() == "" or pd.isna(v))):
                         return "-"
                     
-                    # 有効な数値（0を含む）はここで処理
                     num = float(v)
                     
                     if use_comma:
@@ -506,7 +548,6 @@ def display_room_status(profile_data, input_room_id):
                     return str(v)
 
             # --- ▼ 列ごとにフォーマット適用 ▼ ---
-            # 'レベル' を除外したカンマなし列を適用
             format_cols_no_comma = ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位'] 
             format_cols_comma = ['ポイント']
 
@@ -587,11 +628,10 @@ def display_room_status(profile_data, input_room_id):
                  'まいにち配信', '公/フ', '順位', 'ポイント', 'レベル'] 
             ]
             
-            # --- 💡 デバッグ情報表示セクション ---
+            # --- 💡 前回のデバッグ情報表示セクション ---
             if debug_data:
                 st.markdown("---")
-                st.markdown("### 🐞 調査用デバッグ情報（レベル列）")
-                st.warning("この情報はデバッグのために表示されています。")
+                st.markdown("### 🐞 デバッグ情報（レベル列の変換結果）")
                 
                 df_debug = pd.DataFrame(debug_data)
                 
@@ -638,6 +678,7 @@ def display_room_status(profile_data, input_room_id):
         st.info("現在、このルームはイベントに参加していません。")
 
 # --- メインロジック ---
+# ... (認証ロジック、メインUIのロジックは省略。変更なし) ...
 
 # セッションステートの初期化
 if 'authenticated' not in st.session_state:
