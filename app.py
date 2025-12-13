@@ -14,7 +14,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- 定数設定 (変更なし) ---
+# --- 定数設定 ---
 ROOM_LIST_URL = "https://mksoul-pro.com/showroom/file/room_list.csv"
 ROOM_PROFILE_API = "https://www.showroom-live.com/api/room/profile?room_id={room_id}"
 API_EVENT_ROOM_LIST_URL = "https://www.showroom-live.com/api/event/room_list" 
@@ -26,7 +26,7 @@ GENRE_MAP = {
     110: "アナウンサー", 113: "クリエイター", 200: "ライバー",
 }
 
-# --- ユーティリティ関数 (変更なし) ---
+# --- ユーティリティ関数 ---
 
 def _safe_get(data, keys, default_value=None):
     """ネストされた辞書から安全に値を取得するヘルパー関数"""
@@ -64,10 +64,9 @@ def get_room_profile(room_id):
     except requests.exceptions.RequestException:
         return None
 
-# --- イベント情報取得関数群 (get_event_participants_info のみ修正) ---
+# --- イベント情報取得関数群 (get_event_participants_info を修正) ---
 
 def get_total_entries(event_id):
-    # 既存ロジックを維持
     params = {"event_id": event_id}
     try:
         response = requests.get(API_EVENT_ROOM_LIST_URL, headers=HEADERS, params=params, timeout=10)
@@ -83,7 +82,6 @@ def get_total_entries(event_id):
 
 
 def get_event_room_list_data(event_id):
-    # 既存ロジックを維持
     params = {"event_id": event_id}
     try:
         resp = requests.get(API_EVENT_ROOM_LIST_URL, headers=HEADERS, params=params, timeout=10)
@@ -110,7 +108,6 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     上位10ルームについては、個別のプロフィールAPIを叩いて詳細情報を統合する。
     """
     if not event_id:
-        # デバッグ情報キーをNoneで返すように修正
         return {"total_entries": "-", "rank": "-", "point": "-", "level": "-", "top_participants": [], "raw_api_data_sample": None}
 
     total_entries = get_total_entries(event_id)
@@ -130,14 +127,12 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     rank = _safe_get(current_room_data, ["rank"], "-")
     point = _safe_get(current_room_data, ["point"], "-")
     
-    # 🔥 修正: ターゲットルームのレベルを quest_level として取得を試みる
-    # 複数の候補キーからレベル情報を取得するロジックを簡素化し、quest_levelに絞る
-    level = _safe_get(current_room_data, ["quest_level"], "-")
+    # 🔥 修正: ターゲットルームのレベルを event_entry の中の quest_level から取得
+    level = _safe_get(current_room_data, ["event_entry", "quest_level"], "-")
     
-    # ... (以下のロジックは変更なし) ...
-
     top_participants = room_list_data
     if top_participants:
+        # pointは文字列またはNoneの可能性があるため、intにキャストしてソート
         top_participants.sort(key=lambda x: int(str(x.get('point', 0) or 0)), reverse=True)
     
     top_participants = top_participants[:limit] # 上位10件に制限
@@ -149,7 +144,6 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
         room_id = participant.get('room_id')
         
         # 取得必須のキーを初期化（Noneで初期化）
-        # 'room_level_profile' のように、プロフィールAPI由来であることを明示的にキー名変更
         for key in ['room_level_profile', 'show_rank_subdivided', 'follower_num', 'live_continuous_days', 'is_official_api']: 
             participant[key] = None
             
@@ -167,12 +161,12 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
                      participant['room_name'] = _safe_get(profile, ["room_name"], f"Room {room_id}")
         
         
-        # 最終的に quest_level がセットされていない場合、ここでキーを追加（DataFrame化でエラーが出ないように）
-        if 'quest_level' not in participant:
-             # イベント参加リストAPIが `quest_level` を持っている前提を維持
-             participant['quest_level'] = _safe_get(participant, ["quest_level"], None)
+        # 🔥 修正: イベントの「レベル」を event_entry.quest_level から取得し、
+        #          DataFrame化のために 'event_quest_level' というキーで格納
+        participant['event_quest_level'] = _safe_get(participant, ["event_entry", "quest_level"], None)
 
-
+        # 既存の 'quest_level' は不要なため、ここでは追加しない
+        
         enriched_participants.append(participant)
 
     # 応答に必要な情報を返す
@@ -180,7 +174,7 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
         "total_entries": total_entries if isinstance(total_entries, int) and total_entries > 0 else "-",
         "rank": rank,
         "point": point,
-        "level": level,
+        "level": level, # ターゲットルームのレベルはこれでOK
         "top_participants": enriched_participants, # エンリッチされたリストを返す
         "raw_api_data_sample": raw_api_data_sample # 生データデバッグ情報
     }
@@ -209,7 +203,7 @@ def display_room_status(profile_data, input_room_id):
     room_url = f"https://www.showroom-live.com/room/profile?room_id={input_room_id}"
     
     
-    # --- 💡 カスタムCSSの定義（変更なし） ---
+    # --- 💡 カスタムCSSの定義 ---
     custom_styles = """
     <style>
     /* 全体のフォント統一と余白調整 */
@@ -353,7 +347,7 @@ def display_room_status(profile_data, input_room_id):
         unsafe_allow_html=True
     )
     
-    # ... (ルーム基本情報表示は省略) ...
+    # --- 2. 📊 ルーム基本情報（第一カテゴリー） ---
     st.markdown("### 📊 ルーム基本情報")
     col1, col2, col3, col4 = st.columns([1.5, 1.5, 1.5, 1.5]) 
 
@@ -411,6 +405,7 @@ def display_room_status(profile_data, input_room_id):
 
         # イベント参加情報（API取得）
         with st.spinner("イベント参加情報を取得中..."):
+            # ターゲットルームのレベルは get_event_participants_info 内で event_entry.quest_level から取得される
             event_info = get_event_participants_info(event_id, input_room_id, limit=10)
             
             total_entries = event_info["total_entries"]
@@ -429,8 +424,8 @@ def display_room_status(profile_data, input_room_id):
             with event_col_data3:
                 st.metric(label="獲得ポイント", value=f"{point:,}" if isinstance(point, int) else str(point), delta_color="off")
             with event_col_data4:
-                st.metric(label="レベル", value=str(level), delta_color="off")
-
+                st.metric(label="レベル", value=str(level), delta_color="off") # ここに正しいレベルが表示される
+            
             top_participants = event_info["top_participants"]
 
 
@@ -439,7 +434,7 @@ def display_room_status(profile_data, input_room_id):
         # --- 🚨 新しいデバッグ情報表示セクション (生データ) ---
         st.markdown("### 🔴 API生データサンプル（イベント参加情報）")
         if raw_api_data_sample and raw_api_data_sample != "N/A":
-            st.warning("この情報には、レベル情報の正しいキー名が含まれている可能性があります。")
+            st.warning("イベントレベルは `event_entry.quest_level` に格納されているため、トップレベルの `quest_level` が `null` でも問題ありません。")
             json_str = json.dumps(raw_api_data_sample, indent=2, ensure_ascii=False)
             st.code(json_str, language='json')
         else:
@@ -455,10 +450,11 @@ def display_room_status(profile_data, input_room_id):
             dfp = pd.DataFrame(top_participants)
 
             # 必要なカラムが全て存在することを確認
+            # 🔥 修正: 'quest_level' を 'event_quest_level' に変更
             cols = [
                 'room_name', 'room_level_profile', 'show_rank_subdivided', 'follower_num',
                 'live_continuous_days', 'room_id', 'rank', 'point',
-                'is_official_api', 'quest_level' # quest_levelを含む
+                'is_official_api', 'event_quest_level' 
             ]
             
             # DataFrameに欠損しているカラムをNoneで埋める
@@ -469,21 +465,21 @@ def display_room_status(profile_data, input_room_id):
             dfp_display = dfp[cols].copy()
 
             # ▼ rename（ユーザー様の仕様通り）
+            # 🔥 修正: 'event_quest_level' を 'レベル' にリネーム
             dfp_display.rename(columns={
                 'room_name': 'ルーム名', 
-                'room_level_profile': 'ルームレベル', # 🔥 修正: プロフィール由来のレベルを使用
+                'room_level_profile': 'ルームレベル', 
                 'show_rank_subdivided': 'ランク',
                 'follower_num': 'フォロワー数', 
                 'live_continuous_days': 'まいにち配信', 
                 'rank': '順位', 
                 'point': 'ポイント',
                 'is_official_api': 'is_official_api',
-                'quest_level': 'レベル' # 🔥 修正: quest_levelをイベントの「レベル」として使用
+                'event_quest_level': 'レベル' 
             }, inplace=True)
 
             # ▼ 公/フ 判定関数（API情報使用）
             def get_official_mark_from_api(is_official_value):
-                """APIのis_official値に基づいて公/フを判定する (True=公, False=フ)"""
                 if is_official_value is True:
                     return "公"
                 elif is_official_value is False:
@@ -535,6 +531,7 @@ def display_room_status(profile_data, input_room_id):
             # デバッグ情報を格納するリスト
             debug_data = [] 
 
+            # デバッグ情報には、APIのどのキーが参照されたかを示すために、キー名を変更
             def format_level_safely_FINAL_WITH_DEBUG(val, room_id):
                 """APIの値(val)を安全にレベル表示用文字列に変換する (デバッグ情報付き)"""
                 raw_type = type(val).__name__
@@ -553,7 +550,7 @@ def display_room_status(profile_data, input_room_id):
                 # デバッグ情報を記録
                 debug_data.append({
                     'Room ID': room_id,
-                    'API Raw Value (quest_level)': str(val),
+                    'API Raw Value (event_entry.quest_level)': str(val), # キー名を修正
                     'API Raw Type': raw_type,
                     'Conversion Result': final_value
                 })
@@ -640,68 +637,80 @@ def display_room_status(profile_data, input_room_id):
 
     else:
         st.info("現在、このルームはイベントに参加していません。")
+        
+        # イベント不参加の場合は、過去のデバッグ情報を表示しない
+        st.markdown("---")
+        st.markdown("### 🔴 API生データサンプル（イベント参加情報）")
+        st.info("ルームがイベントに参加していないため、イベントAPIデータはありません。")
+        st.markdown("---")
+        st.markdown("### 🐞 デバッグ情報（レベル列の変換結果）")
+        st.info("ルームがイベントに参加していないため、デバッグ情報はありません。")
+        st.markdown("---")
 
-# --- メインロジック (変更なし) ---
-# ...
-if not st.session_state.authenticated:
-    st.title("💖 SHOWROOM ルームステータス可視化ツール")
-    st.markdown("##### 🔑 認証コードを入力してください")
-    input_auth_code = st.text_input(
-        "認証コードを入力してください:",
-        placeholder="認証コード",
-        type="password",
-        key="room_id_input_auth"
+
+
+# --- メインロジック ---
+
+def main():
+    st.markdown("## ⚙️ ルームID入力")
+    
+    # URLパラメータからroom_idを取得
+    query_params = st.query_params
+    default_room_id = query_params.get("room_id", [""])[0]
+    
+    room_id = st.text_input(
+        "SHOWROOMのルームID（数字）またはルームURLキー（英数字）を入力してください。",
+        value=default_room_id,
+        key="room_id_input",
+        placeholder="例: 496122 または fiito492"
     )
-    if st.button("認証する"):
-        if input_auth_code:
-            with st.spinner("認証中..."):
-                try:
-                    response = requests.get(ROOM_LIST_URL, timeout=5)
-                    response.raise_for_status()
-                    room_df = pd.read_csv(io.StringIO(response.text), header=None, dtype=str)
-                    valid_codes = set(str(x).strip() for x in room_df.iloc[:, 0].dropna())
-                    if input_auth_code.strip() in valid_codes:
-                        st.session_state.authenticated = True
-                        st.success("✅ 認証に成功しました。ツールを利用できます。")
-                        st.rerun()
-                    else:
-                        st.error("❌ 認証コードが無効です。正しい認証コードを入力してください。")
-                except Exception as e:
-                    st.error(f"認証リストを取得できませんでした: {e}")
-        else:
-            st.warning("認証コードを入力してください。")
-    st.stop()
 
-if st.session_state.authenticated:
-    st.title("💖 SHOWROOM ルームステータス可視化ツール")
-    st.markdown("### 🔎 ルームIDの入力")
-    input_room_id_current = st.text_input(
-        "表示したいルームIDを入力してください:",
-        placeholder="例: 496122",
-        key="room_id_input_main",
-        value=st.session_state.input_room_id
-    ).strip()
-    if input_room_id_current != st.session_state.input_room_id:
-        st.session_state.input_room_id = input_room_id_current
-        st.session_state.show_status = False
-    if st.button("ルームステータスを表示"):
-        if st.session_state.input_room_id and st.session_state.input_room_id.isdigit():
-            st.session_state.show_status = True
-        elif st.session_state.input_room_id:
-            st.error("ルームIDは数字で入力してください。")
+    if room_id:
+        room_id = str(room_id).strip()
+        
+        # 入力がルームURLキーの場合、room_list.csvからIDを検索
+        if not room_id.isdigit():
+            # CSVをダウンロードしてIDを検索するロジックを実装
+            with st.spinner(f"ルームURLキー '{room_id}' からルームIDを検索中..."):
+                try:
+                    response = requests.get(ROOM_LIST_URL, timeout=10)
+                    response.raise_for_status()
+                    csv_data = io.StringIO(response.content.decode('utf-8'))
+                    df_room_list = pd.read_csv(csv_data)
+                    
+                    # 'room_url_key'列を検索
+                    match = df_room_list[df_room_list['room_url_key'] == room_id]
+                    
+                    if not match.empty:
+                        # 最初にマッチした行の'room_id'を使用
+                        room_id_to_fetch = str(match['room_id'].iloc[0])
+                        st.success(f"ルームキー '{room_id}' に対応するルームID: **{room_id_to_fetch}** を見つけました。")
+                        # 検索で見つかったIDに更新
+                        room_id = room_id_to_fetch
+                    else:
+                        st.error(f"ルームURLキー '{room_id}' に対応するルームIDが見つかりませんでした。数字のルームIDを直接お試しください。")
+                        return # IDが見つからない場合は処理を中断
+                
+                except requests.exceptions.RequestException:
+                    st.error("ルームリストの取得に失敗しました。ネットワーク接続を確認してください。")
+                    return
+                except Exception as e:
+                    st.error(f"ルームリスト処理中にエラーが発生しました: {e}")
+                    return
+        
+        # URLパラメータを更新
+        if query_params.get("room_id", [""])[0] != room_id:
+             st.query_params["room_id"] = room_id
+
+        # ルームプロファイルの取得
+        st.markdown("---")
+        with st.spinner(f"ルームID: **{room_id}** の情報を取得中..."):
+            profile_data = get_room_profile(room_id)
+        
+        if profile_data and profile_data.get("room_name"):
+            display_room_status(profile_data, room_id)
         else:
-            st.warning("ルームIDを入力してください。")
-    st.divider()
-    if st.session_state.show_status and st.session_state.input_room_id:
-        with st.spinner(f"ルームID {st.session_state.input_room_id} の情報を取得中..."):
-            room_profile = get_room_profile(st.session_state.input_room_id)
-        if room_profile:
-            display_room_status(room_profile, st.session_state.input_room_id)
-        else:
-            st.error(f"ルームID {st.session_state.input_room_id} の情報を取得できませんでした。IDを確認してください。")
-    st.markdown("---")
-    if st.button("認証を解除する", help="認証状態をリセットし、認証コード入力画面に戻ります"):
-        st.session_state.authenticated = False
-        st.session_state.show_status = False
-        st.session_state.input_room_id = ""
-        st.rerun()
+            st.error(f"ルームID: **{room_id}** のプロフィール情報が見つからないか、APIエラーが発生しました。IDを確認してください。")
+
+if __name__ == '__main__':
+    main()
