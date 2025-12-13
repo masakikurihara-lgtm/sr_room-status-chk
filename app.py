@@ -349,6 +349,10 @@ def display_room_status(profile_data, input_room_id):
     /* st.metric の値を強制的に揃える (イベント情報セクション用) */
     .stMetric label {
         font-size: 14px; 
+        color: #666; 
+        font-weight: 600;
+        margin-bottom: 5px;
+        display: block; 
     }
     .stMetric > div > div:nth-child(2) > div {
         font-size: 24px !important; 
@@ -358,67 +362,65 @@ def display_room_status(profile_data, input_room_id):
     /* HTMLテーブルのスタイル */
     .stHtml .dataframe {
         border-collapse: collapse;
-        text-align: center !important; 
+        text-align: center; /* HTML側からの影響を打ち消すため、ここで center を指定 */
         margin-top: 10px; 
-        width: 100%; /* 親要素の幅を使う */
-        max-width: 1000px; /* テーブルの最大幅を制限 (調整可能) */
-        min-width: 800px; /* 最小幅を設定 */
+        width: 100%; 
+        max-width: 1000px; 
+        min-width: 800px; 
     }
     
     /* 中央寄せラッパー (テーブル全体を中央に配置) */
     .center-table-wrapper {
         display: flex;
-        justify-content: center; /* 子要素（テーブル）を水平方向の中央に配置 */
+        justify-content: center; 
         width: 100%;
         overflow-x: auto;
-        text-align: center !important;
+        /* text-align: center は th や td ではなく、テーブル全体の子要素に影響するため削除 */
     }
 
-    .stHtml .dataframe tr {
+    /* 🔥 最終調整: すべての th と td の text-align を強制的に center に設定 */
+    /* Streamlit/Pandasがインラインで right を適用した場合に上書きするために !important を使用 */
+    .stHtml .dataframe th, 
+    .stHtml .dataframe td {
         text-align: center !important; 
     }
     
-    /* 🔥 修正 1: 全てのヘッダーセル (th) を中央寄せに設定 */
+    /* ヘッダーセルの共通スタイル */
     .stHtml .dataframe th {
         background-color: #e8eaf6; 
         color: #1a237e; 
         font-weight: bold;
         padding: 8px 10px; 
         font-size: 14px;
-        /* 見出し全体を中央寄せに統一 */
-        text-align: center !important; 
         border-bottom: 2px solid #c5cae9; 
         white-space: nowrap;
     }
     
+    /* データセルの共通スタイル */
     .stHtml .dataframe td {
         padding: 6px 10px; 
         font-size: 13px; 
         line-height: 1.4;
         border-bottom: 1px solid #f0f0f0;
-        /* データセル全体も中央寄せに設定 (今回はデータセルは中央でOKのため維持) */
-        text-align: center !important; 
         white-space: nowrap; 
     }
     .stHtml .dataframe tbody tr:hover {
         background-color: #f7f9fd; 
     }
 
-    /* 🔥 修正 2: 列ごとの配置調整をすべて中央寄せ (center !important) で統一 */
+    /* 列ごとの幅とホワイトスペースの調整 */
     
-    /* 1. ルーム名: 中央寄せ */
+    /* 1. ルーム名: 中央寄せ、幅広 */
     .stHtml .dataframe th:nth-child(1), .stHtml .dataframe td:nth-child(1) {
-        text-align: center !important; 
         min-width: 280px; 
         white-space: normal !important; 
     }
     
-    /* 数値系の列を中央寄せに統一 */
+    /* 数値系の列を中央寄せに統一（幅指定） */
     .stHtml .dataframe th:nth-child(2), .stHtml .dataframe td:nth-child(2), /* ルームレベル */
     .stHtml .dataframe th:nth-child(4), .stHtml .dataframe td:nth-child(4), /* フォロワー数 */
     .stHtml .dataframe th:nth-child(5), .stHtml .dataframe td:nth-child(5), /* まいにち配信 */
     .stHtml .dataframe th:nth-child(9), .stHtml .dataframe td:nth-child(9) { /* ポイント */
-        text-align: center !important; /* 強制中央寄せ */
         width: 10%; 
     }
 
@@ -428,7 +430,6 @@ def display_room_status(profile_data, input_room_id):
     .stHtml .dataframe th:nth-child(7), .stHtml .dataframe td:nth-child(7), /* ルームID */
     .stHtml .dataframe th:nth-child(8), .stHtml .dataframe td:nth-child(8), /* 順位 */
     .stHtml .dataframe th:nth-child(10), .stHtml .dataframe td:nth-child(10) { /* レベル (最終列) */
-        text-align: center !important; /* 強制中央寄せ */
         width: 8%;
     }
     
@@ -708,10 +709,18 @@ def display_room_status(profile_data, input_room_id):
             # コンパクトに expander 内で表示
             with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
                 
+                # --- 🔥 修正 3: PandasのHTML出力設定を上書き ---
+                # Pandasの数値列に対するデフォルトの右寄せを中央寄せに変更
+                # **注意: これを適用すると、すべてのPandas DataFrameに影響する可能性があります。**
+                # ユーザーの環境によっては、Streamlitのキャッシュによって効果が出ない場合がありますが、適用します。
+                
+                # `set_option`は環境に影響を与えるため、表示直前に実行し、 Streamlit の制限でうまく動作しない場合はCSSに頼ります。
+                pd.set_option('styler.format.text_align', 'center')
+                
                 html_table = dfp_display.to_html(
                     escape=False, 
                     index=False, 
-                    # 外部CSSで制御するため justify は削除 (元のコードの意図を尊重)
+                    # justify='center' を明示的に指定しないことで、外部CSSの制御を優先させます。
                     classes='dataframe data-table data-table-full-width' 
                 )
                 
@@ -724,6 +733,9 @@ def display_room_status(profile_data, input_room_id):
 
                 # HTMLテーブルを直接 st.markdown で出力
                 st.markdown(centered_html, unsafe_allow_html=True)
+                
+                # 使用後に設定をリセット（通常は不要ですが、念のため）
+                # pd.reset_option('styler.format.text_align')
 
         else:
             st.info("参加ルーム情報が取得できませんでした（ランキングイベントではない、またはデータがまだありません）。")
