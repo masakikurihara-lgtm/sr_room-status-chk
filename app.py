@@ -36,7 +36,8 @@ def _safe_get(data, keys, default_value=None):
             temp = temp.get(key)
         else:
             return default_value
-    if temp is None or (isinstance(temp, (str, float)) and pd.isna(temp)):
+    # 取得した値がNone、空の文字列、またはNaNの場合もデフォルト値を返す
+    if temp is None or (isinstance(temp, str) and temp.strip() == "") or (isinstance(temp, float) and pd.isna(temp)):
             return default_value
     return temp
 
@@ -90,6 +91,7 @@ def get_event_room_list_data(event_id):
         resp.raise_for_status()
         data = resp.json()
         
+        # イベントAPIのリストが格納されている可能性のあるキーを探索
         if isinstance(data, dict):
             for k in ('list', 'room_list', 'event_entry_list', 'entries', 'data', 'event_list'):
                 if k in data and isinstance(data[k], list):
@@ -106,8 +108,6 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     """
     イベント参加ルーム情報・状況APIから必要な情報を抽出する。
     上位10ルームについては、個別のプロフィールAPIを叩いて詳細情報を統合する。
-    
-    🔥 修正箇所: ターゲットルームの情報取得をリスト制限前に行うように修正。
     """
     if not event_id:
         return {"total_entries": "-", "rank": "-", "point": "-", "level": "-", "top_participants": []}
@@ -116,23 +116,46 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     room_list_data = get_event_room_list_data(event_id)
     current_room_data = None
     
-    # --- 🔥 修正 1: ターゲットルームの情報をリスト全体から探す（順位に関わらず確定させる） ---
+    # --- 🎯 ターゲットルームの情報をリスト全体から確実に探す ---
+    # `room_id` は数値型または文字列型で比較できるようにする
+    target_room_id_str = str(target_room_id)
     for room in room_list_data:
-        if str(room.get("room_id")) == str(target_room_id):
+        # room_id が存在し、ターゲットルームIDと一致するか確認
+        if str(room.get("room_id")) == target_room_id_str:
             current_room_data = room
             break
 
-    # ターゲットルームの参加状況を確定
-    rank = _safe_get(current_room_data, ["rank"], "-")
-    point = _safe_get(current_room_data, ["point"], "-")
-    level = _safe_get(current_room_data, ["event_entry", "quest_level"], "-")
+    # --- 🎯 ターゲットルームの参加状況を確定 ---
+    if current_room_data:
+        # 順位: "rank"、または "rank_entry" など複数のキーを試行
+        rank = _safe_get(current_room_data, ["rank"], default_value="-")
+        
+        # ポイント: "point"、または "score" など複数のキーを試行
+        point = _safe_get(current_room_data, ["point"], default_value=None)
+        if point is None or point == "-":
+             point = _safe_get(current_room_data, ["score"], default_value="-")
+        
+        # レベル: "event_entry" の下の "quest_level" または "entry_level" を試行
+        level = _safe_get(current_room_data, ["event_entry", "quest_level"], default_value=None)
+        if level is None or level == "-":
+             level = _safe_get(current_room_data, ["entry_level"], default_value="-")
+        if level is None or level == "-":
+             level = _safe_get(current_room_data, ["event_entry", "level"], default_value="-") # 最終試行
+        if level is None: level = "-" # None の場合は最終的にハイフン
+        
+    else:
+        # ターゲットルームがリストに見つからなかった場合（参加者リストにまだ載っていない等）
+        rank = "-"
+        point = "-"
+        level = "-"
+        
     # ------------------------------------------------------------------------------------
 
-    # --- 🔥 修正 2: ここから、上位10ルームのリストを作成し、エンリッチメント処理に進む ---
+    # --- 上位10ルームのリストを作成し、エンリッチメント処理に進む ---
     top_participants = room_list_data
     if top_participants:
-        # pointは文字列またはNoneの可能性があるため、intにキャストしてソート
-        top_participants.sort(key=lambda x: int(str(x.get('point', 0) or 0)), reverse=True)
+        # point/score は文字列またはNoneの可能性があるため、intにキャストしてソート
+        top_participants.sort(key=lambda x: int(str(x.get('point', x.get('score', 0)) or 0)), reverse=True)
     
     # ここで初めてリストを上位10件に制限する
     top_participants = top_participants[:limit]
@@ -160,9 +183,13 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
                 if not participant.get('room_name'):
                      participant['room_name'] = _safe_get(profile, ["room_name"], f"Room {room_id}")
         
-        # イベントの「レベル」を event_entry.quest_level から取得
+        # イベントの「レベル」を取得 ('event_entry.quest_level' またはその他のキーから)
         participant['quest_level'] = _safe_get(participant, ["event_entry", "quest_level"], None)
-        
+        if participant['quest_level'] is None:
+             participant['quest_level'] = _safe_get(participant, ["entry_level"], None)
+        if participant['quest_level'] is None:
+             participant['quest_level'] = _safe_get(participant, ["event_entry", "level"], None)
+
         # 最終的に quest_level がセットされていない場合、ここでキーを追加（DataFrame化でエラーが出ないように）
         if 'quest_level' not in participant:
              participant['quest_level'] = None
@@ -439,13 +466,32 @@ def display_room_status(profile_data, input_room_id):
                 st.metric(label="参加ルーム数", value=f"{total_entries:,}" if isinstance(total_entries, int) else str(total_entries), delta_color="off")
             with event_col_data2:
                 # 順位は確定した値を使用
-                st.metric(label="現在の順位", value=str(rank), delta_color="off")
+                # 数値型に変換可能ならカンマなしで表示、変換不可なら文字列のまま
+                rank_display = str(rank)
+                try:
+                    rank_display = f"{int(rank):,}"
+                except (ValueError, TypeError):
+                    pass
+                st.metric(label="現在の順位", value=rank_display, delta_color="off")
+
             with event_col_data3:
                 # 獲得ポイントは確定した値を使用
-                st.metric(label="獲得ポイント", value=f"{point:,}" if isinstance(point, int) else str(point), delta_color="off")
+                # 数値型に変換可能ならカンマありで表示、変換不可なら文字列のまま
+                point_display = str(point)
+                try:
+                    point_display = f"{int(point):,}"
+                except (ValueError, TypeError):
+                    pass
+                st.metric(label="獲得ポイント", value=point_display, delta_color="off")
+
             with event_col_data4:
                 # レベルは確定した値を使用
-                st.metric(label="レベル", value=str(level), delta_color="off")
+                level_display = str(level)
+                try:
+                    level_display = f"{int(level):,}"
+                except (ValueError, TypeError):
+                    pass
+                st.metric(label="レベル", value=level_display, delta_color="off")
             
             top_participants = event_info["top_participants"]
 
@@ -512,6 +558,7 @@ def display_room_status(profile_data, input_room_id):
                     if v is None or (isinstance(v, (str, float)) and (str(v).strip() == "" or pd.isna(v))):
                         return "-"
                     
+                    # 'point' や 'rank' がNone, NaN, 空文字列でないことを確認してから float に変換
                     num = float(v)
                     
                     if use_comma:
@@ -520,10 +567,13 @@ def display_room_status(profile_data, input_room_id):
                         return f"{int(num)}"
                         
                 except Exception:
-                    return str(v)
+                    # 変換エラーが発生した場合、元の値を文字列として返す（またはハイフン）
+                    return str(v) if str(v).strip() != "" else "-"
 
             # --- ▼ 列ごとにフォーマット適用 ▼ ---
+            # 'ルームレベル'、'フォロワー数'、'まいにち配信'、'順位'、'ルームID' はカンマなし
             format_cols_no_comma = ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位', 'ルームID'] 
+            # 'ポイント' はカンマあり
             format_cols_comma = ['ポイント']
 
             for col in format_cols_comma:
@@ -535,16 +585,18 @@ def display_room_status(profile_data, input_room_id):
                     dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=False))
             
 
-            # 🔥 「レベル」列のフォーマット処理
+            # 🔥 「レベル」列のフォーマット処理 (数値型として取得できなかった場合を考慮)
             def format_level_safely_FINAL(val):
                 """APIの値(val)を安全にレベル表示用文字列に変換する"""
                 if val is None or pd.isna(val) or str(val).strip() == "" or val is False or (isinstance(val, (list, tuple)) and not val):
                     return "-"
                 else:
                     try:
+                        # 整数に変換可能であれば整数として表示
                         return str(int(val))
                     except (ValueError, TypeError):
-                        return "-"
+                        # 変換できなければ文字列をそのまま返す（またはハイフン）
+                        return str(val) if str(val).strip() != "" else "-"
 
             if 'レベル' in dfp_display.columns:
                 dfp_display['レベル'] = dfp_display['レベル'].apply(format_level_safely_FINAL)
