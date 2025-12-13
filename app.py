@@ -199,14 +199,15 @@ def display_room_status(profile_data, input_room_id):
     room_url = f"https://www.showroom-live.com/room/profile?room_id={input_room_id}"
     
     
-    # --- 💡 カスタムCSSの定義（タイトル領域、項目値の統一） ---
+    # --- 💡 カスタムCSSの定義（タイトル領域、項目値の統一、赤線削除） ---
     custom_styles = """
     <style>
     /* 全体のフォント統一と余白調整 */
     h3 { 
         margin-top: 20px; 
         padding-top: 10px; 
-        border-bottom: 2px solid #ff4b4b; /* セクション見出しの下線 */
+        /* 🔥 セクション見出しの赤線を削除 */
+        border-bottom: none; 
     }
 
     /* タイトル領域のスタイル */
@@ -238,18 +239,20 @@ def display_room_status(profile_data, input_room_id):
     
     /* 🚀 ルーム基本情報のカスタムメトリック用スタイル */
     .custom-metric-container {
-        margin-bottom: 10px;
+        margin-bottom: 15px; /* 項目間の縦の余白を少し増やす */
         padding: 5px 0;
+        border-left: 3px solid #ff4b4b; /* 左側にアクセントラインを追加 (スカスカ対策) */
+        padding-left: 10px;
     }
     .metric-label {
-        font-size: 14px; /* ラベルのフォントサイズを統一 */
+        font-size: 14px; 
         color: #666; 
         font-weight: 600;
         margin-bottom: 5px;
-        display: block; /* ブロック要素にして縦の並びを確保 */
+        display: block; 
     }
     .metric-value {
-        font-size: 24px !important; /* 項目値を24pxに統一 */
+        font-size: 24px !important; 
         font-weight: bold;
         line-height: 1.1;
         color: #1c1c1c;
@@ -264,15 +267,12 @@ def display_room_status(profile_data, input_room_id):
         font-weight: bold;
     }
     
-    /* ⭐ テーブルコンテナに横スクロールを適用 (前回の不確実なセレクタを削除) */
-    /* 代わりに、HTMLテーブルをラップする div にインラインで overflow-x: auto を適用します。 */
-    
-    /* HTMLテーブルのスタイルをここで定義しておき、後でテーブルのHTMLに適用 */
-    /* StreamlitのHTMLレンダリング領域内 (stHtml) の DataFrame スタイル */
+    /* HTMLテーブルのスタイル */
     .stHtml .dataframe {
-        width: 100%; /* PCで幅を最大限に活用 */
-        min-width: 900px; /* スマホで横スクロールを発生させるための最小幅を拡大 */
+        width: 100%; 
+        min-width: 900px; 
         border-collapse: collapse;
+        margin-top: 10px; /* テーブル上部に少し余白 */
     }
     .stHtml .dataframe th {
         background-color: #e8eaf6; 
@@ -303,14 +303,13 @@ def display_room_status(profile_data, input_room_id):
     .stHtml .dataframe th:nth-child(7), .stHtml .dataframe td:nth-child(7), /* 順位 */
     .stHtml .dataframe th:nth-child(8), .stHtml .dataframe td:nth-child(8) { /* ポイント */
         text-align: right !important; 
-        width: 10%;
+        width: 12%; /* 幅を均等にするため調整 */
     }
-    /* ランクを中央寄せ */
+    /* ランクと公/フを中央寄せ */
     .stHtml .dataframe th:nth-child(3), .stHtml .dataframe td:nth-child(3) { 
         text-align: center !important; 
         width: 8%;
     }
-    /* 公/フを中央寄せ */
     .stHtml .dataframe th:nth-child(6), .stHtml .dataframe td:nth-child(6) { 
         text-align: center !important; 
         font-weight: bold;
@@ -319,7 +318,7 @@ def display_room_status(profile_data, input_room_id):
     }
     /* ルーム名のセル幅を柔軟に */
     .stHtml .dataframe th:nth-child(1), .stHtml .dataframe td:nth-child(1) {
-        min-width: 250px; /* ルーム名に確保する最小幅を拡大 */
+        min-width: 280px; /* ルーム名に確保する最小幅をさらに拡大 */
         white-space: normal !important; 
     }
     </style>
@@ -328,6 +327,7 @@ def display_room_status(profile_data, input_room_id):
 
     # ヘルパー関数: カスタムスタイルを適用したメトリックを表示
     def custom_metric(label, value):
+        # 🔥 custom-metric-containerにborder-leftを指定し、スカスカを視覚的に埋める
         st.markdown(
             f'<div class="custom-metric-container">'
             f'<span class="metric-label">{label}</span>'
@@ -349,7 +349,8 @@ def display_room_status(profile_data, input_room_id):
     # --- 2. 📊 ルーム基本情報（第一カテゴリー） ---
     st.markdown("### 📊 ルーム基本情報")
     
-    col1, col2, col3, col4 = st.columns(4)
+    # 🔥 カラム間のギャップを調整し、PCでの視覚的なスカスカ感を軽減
+    col1, col2, col3, col4 = st.columns([1.5, 1.5, 1.5, 1.5]) 
 
     # ▼ 左側：レベル/フォロワー/配信日数
     with col1:
@@ -416,7 +417,8 @@ def display_room_status(profile_data, input_room_id):
             
             st.markdown("#### 参加状況（自己ルーム）")
             # イベント参加情報表示 (4カラムで横並び) - st.metric を使用
-            event_col_data1, event_col_data2, event_col_data3, event_col_data4 = st.columns(4)
+            # 🔥 カラム間のギャップを調整し、PCでの視覚的なスカスカ感を軽減
+            event_col_data1, event_col_data2, event_col_data3, event_col_data4 = st.columns([1, 1, 1, 1])
             with event_col_data1:
                 st.metric(label="参加ルーム数", value=f"{total_entries:,}" if isinstance(total_entries, int) else str(total_entries), delta_color="off")
             with event_col_data2:
@@ -543,8 +545,7 @@ def display_room_status(profile_data, input_room_id):
                 html_table = html_table.replace('\n', '')
                 html_table = re.sub(r'>\s+<', '><', html_table)
 
-                # ⭐ HTMLテーブル全体を div でラップし、インラインで横スクロールを強制適用
-                # これにより、Streamlitの内部コンテナ構造に依存せず、スマホで横スクロールが可能になります。
+                # HTMLテーブル全体を div でラップし、インラインで横スクロールを強制適用
                 html_container = f'<div style="overflow-x: auto; padding-bottom: 10px;">{html_table}</div>'
 
                 # カスタムCSSとHTMLテーブルを一緒に表示
