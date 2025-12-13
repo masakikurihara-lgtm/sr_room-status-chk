@@ -5,7 +5,7 @@ import io
 import datetime
 from dateutil import parser
 import numpy as np
-import re # ✅ HTML出力の安定化のため追加
+import re
 
 # Streamlit の初期設定
 st.set_page_config(
@@ -93,6 +93,7 @@ def get_event_room_list_data(event_id):
         data = resp.json()
         
         if isinstance(data, dict):
+            # APIレスポンスの構造に対応するため、複数のキーをチェック
             for k in ('list', 'room_list', 'event_entry_list', 'entries', 'data', 'event_list'):
                 if k in data and isinstance(data[k], list):
                     return data[k]
@@ -106,7 +107,8 @@ def get_event_room_list_data(event_id):
 
 def get_event_participants_info(event_id, target_room_id, limit=10):
     """
-    イベント参加ルーム情報・状況APIから必要な情報を抽出する。（この関数で総参加者数とランキングデータを統合）
+    イベント参加ルーム情報・状況APIから必要な情報を抽出する。
+    上位10ルームについては、個別のプロフィールAPIを叩いて詳細情報を統合する。
     """
     if not event_id:
         return {"total_entries": "-", "rank": "-", "point": "-", "level": "-", "top_participants": []}
@@ -126,20 +128,46 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     level = _safe_get(current_room_data, ["quest_level"], "-")
 
     top_participants = room_list_data
-    # ✅ 要件: ポイントの高い順にソート (get_event_room_list_dataはAPIの順番なので、ここでソートを保証)
+    # ✅ 要件: ポイントの高い順にソート
     if top_participants:
         # ポイントでソート (pointがない/None/無効な値の場合は0として扱う)
         top_participants.sort(key=lambda x: int(str(x.get('point', 0) or 0)), reverse=True)
     
-    top_participants = top_participants[:limit]
+    top_participants = top_participants[:limit] # 上位10件に制限
 
 
+    # ✅ 修正箇所: 上位10ルームのプロフィール情報を取得し、データをエンリッチ（統合）
+    enriched_participants = []
+    for participant in top_participants:
+        room_id = participant.get('room_id')
+        
+        # 取得必須のキーを初期化
+        for key in ['room_level', 'show_rank_subdivided', 'follower_num', 'live_continuous_days']:
+            participant[key] = ""
+            
+        if room_id:
+            # 個別のプロフィールAPIを叩く
+            profile = get_room_profile(room_id)
+            if profile:
+                # プロフィールデータをマージ
+                participant['room_level'] = _safe_get(profile, ["room_level"], "")
+                participant['show_rank_subdivided'] = _safe_get(profile, ["show_rank_subdivided"], "")
+                participant['follower_num'] = _safe_get(profile, ["follower_num"], "")
+                participant['live_continuous_days'] = _safe_get(profile, ["live_continuous_days"], "")
+                
+                # ルーム名が空の場合に備えて補完
+                if not participant.get('room_name'):
+                     participant['room_name'] = _safe_get(profile, ["room_name"], f"Room {room_id}")
+        
+        enriched_participants.append(participant)
+
+    # 応答に必要な情報を返す
     return {
         "total_entries": total_entries if isinstance(total_entries, int) and total_entries > 0 else "-",
         "rank": rank,
         "point": point,
         "level": level,
-        "top_participants": top_participants
+        "top_participants": enriched_participants # エンリッチされたリストを返す
     }
 # --- イベント情報取得関数群ここまで ---
 
@@ -243,26 +271,22 @@ def display_room_status(profile_data, input_room_id):
 
         st.divider()
 
-        # --- 🔝 参加イベント上位10ルーム（HTMLテーブル強制修正） ---
+        # --- 🔝 参加イベント上位10ルーム（HTMLテーブル） ---
         st.markdown("### 🔝 参加イベント上位10ルーム")
         
         if top_participants:
-            # ✅ ここから、ユーザー様の提示された仕様に合わせます。
-            dfp = pd.DataFrame(top_participants)
             
-            # 必要なカラムが全て存在するように初期化
+            # top_participantsはすでにプロフィールデータでエンリッチされている
+            dfp = pd.DataFrame(top_participants)
+
+            # 必要なカラムが全て存在することを確認（念のため）
             cols = [
                 'room_name', 'room_level', 'show_rank_subdivided', 'follower_num',
                 'live_continuous_days', 'room_id', 'rank', 'point'
             ]
-            for c in cols:
-                if c not in dfp.columns:
-                    # Noneではなく空文字列を使用し、後続の処理でエラーを回避
-                    dfp[c] = ""
-
             dfp_display = dfp[cols].copy()
 
-            # ▼ rename
+            # ▼ rename（ユーザー様の仕様通り）
             dfp_display.rename(columns={
                 'room_name': 'ルーム名', 
                 'room_level': 'ルームレベル', 
@@ -296,9 +320,8 @@ def display_room_status(profile_data, input_room_id):
                 except Exception:
                     return str(v)
 
-            # --- ▼ 列ごとにフォーマット適用（確実に順序反映） ▼ ---
-            # ルームID列はリンク作成に使うため、ここで除外
-            format_cols = ['ルームレベル', 'SHOWランク', 'フォロワー数', 'まいにち配信', '順位', 'ポイント']
+            # --- ▼ 列ごとにフォーマット適用 ▼ ---
+            format_cols = ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位', 'ポイント']
 
             for col in format_cols:
                 # 'ポイント'はカンマ区切りあり
@@ -311,51 +334,24 @@ def display_room_status(profile_data, input_room_id):
             
             # SHOWランクなど文字列/Noneの列のNaN/Noneをハイフンに
             dfp_display['SHOWランク'] = dfp_display['SHOWランク'].fillna('-')
-            dfp_display['ルームレベル'] = dfp_display['ルームレベル'].fillna('')
+            dfp_display['ルームレベル'] = dfp_display['ルームレベル'].fillna('') # レベルが取得できなかった場合は空欄
 
-
-            # ルーム名をリンクにしてテーブル表示（HTMLテーブルを利用）
-            def _make_link(row):
-                # dfpからroom_idを取得
-                rid = row['room_id']
-                # dfp_displayの'ルーム名'（元のroom_name）から名前を取得
-                name = row['room_name']
-                
-                if not name:
-                    name = f"room_{rid}"
-                
-                # ✅ target="_blank"で別窓リンクを実現
-                return f'<a href="https://www.showroom-live.com/room/profile?room_id={rid}" target="_blank">{name}</a>'
-            
-            # ルーム名列をリンクに置き換える（dfp_displayを修正）
+            # --- ✅ ルーム名をリンクに置き換える ---
             # dfpはroom_idを持つ元のDataFrame
-            # 結合キーとしてroom_idを使用し、dfp_displayに一時的にroom_idをマージ
-            
-            # --- ✅ リンク生成の修正 ---
-            # dfp_displayはすでにcolsから作られており、ルームIDがないため、
-            # dfp_displayにdfpのroom_idを追加し、それを使ってリンクを生成する。
-            
-            # dfp_tempにdfp_displayのデータとdfpのroom_idを結合してリンクを生成
-            dfp_temp = dfp_display.copy()
-            # 既存のdfp_displayにroom_id列を追加する作業をここで調整
-            dfp_temp.insert(0, 'room_id_for_link', dfp['room_id'].astype(str))
-            
-            # リンクテキストとして元のルーム名を使用
-            dfp_temp['room_name_for_link'] = dfp['room_name'].fillna('')
-            
+            dfp_link_data = dfp[['room_id', 'room_name']].copy()
+            dfp_link_data['room_name'] = dfp_link_data['room_name'].fillna('')
+
             def _make_link_final(row):
-                rid = row['room_id_for_link']
-                name = row['room_name_for_link']
+                rid = row['room_id']
+                name = row['room_name']
                 if not name:
                     name = f"room_{rid}"
+                # target="_blank"で別窓リンク
                 return f'<a href="https://www.showroom-live.com/room/profile?room_id={rid}" target="_blank">{name}</a>'
 
             # リンクを生成し、dfp_displayの'ルーム名'列を上書き
-            dfp_display['ルーム名'] = dfp_temp.apply(_make_link_final, axis=1)
+            dfp_display['ルーム名'] = dfp_link_data.apply(_make_link_final, axis=1)
 
-            # dfp_displayの列順を最終確認
-            # ルームIDは最終出力に不要なため、意図的に除外済み
-            
             # コンパクトに expander 内で表示
             with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
                 # HTMLの崩れを強制的に修正するカスタムCSS
