@@ -250,24 +250,19 @@ def display_room_status(profile_data, input_room_id):
         display: block; /* ブロック要素にして縦の並びを確保 */
     }
     .metric-value {
-        font-size: 24px; /* 値のフォントサイズを統一 */
+        font-size: 24px !important; /* 🔥 項目値を24pxに統一 */
         font-weight: bold;
         line-height: 1.1;
         color: #1c1c1c;
-    }
-    .metric-sub-value {
-        font-size: 18px; /* スコアなどのサブの値 */
-        font-weight: 600;
-        line-height: 1.1;
-        color: #555;
     }
     
     /* st.metric の値を強制的に揃える (イベント情報セクション用) */
     .stMetric label {
         font-size: 14px; 
     }
+    /* st.metric の値を24pxに統一 */
     .stMetric > div > div:nth-child(2) > div {
-        font-size: 24px !important; /* st.metric の値のフォントサイズを統一 */
+        font-size: 24px !important; 
         font-weight: bold;
     }
     </style>
@@ -275,19 +270,12 @@ def display_room_status(profile_data, input_room_id):
     st.markdown(custom_styles, unsafe_allow_html=True)
 
     # ヘルパー関数: カスタムスタイルを適用したメトリックを表示
-    def custom_metric(label, value, is_sub_value=False):
-        value_class = "metric-sub-value" if is_sub_value else "metric-value"
-        # 公式/フリーの特別な表示をサポート
-        if label == "公式 or フリー":
-            color = "green" if is_official is True else "orange" if is_official is False else "gray"
-            styled_value = f'<span style="color:{color};">{value}</span>'
-        else:
-            styled_value = value
-            
+    def custom_metric(label, value):
+        # 🚨 「公式 or フリー」の色付けを削除しました
         st.markdown(
             f'<div class="custom-metric-container">'
             f'<span class="metric-label">{label}</span>'
-            f'<div class="{value_class}">{styled_value}</div>'
+            f'<div class="metric-value">{value}</div>' # .metric-value クラスで 24px に統一
             f'</div>',
             unsafe_allow_html=True
         )
@@ -322,9 +310,9 @@ def display_room_status(profile_data, input_room_id):
         custom_metric("ジャンル", genre_name)
 
     with col4:
-        # スコアは少し小さめのフォントを使用
-        custom_metric("上位ランクまでのスコア", f'{next_score:,}' if isinstance(next_score, int) else str(next_score), is_sub_value=True)
-        custom_metric("下位ランクまでのスコア", f'{prev_score:,}' if isinstance(prev_score, int) else str(prev_score), is_sub_value=True)
+        # スコアも他の項目値と同じフォントサイズ (24px) で表示
+        custom_metric("上位ランクまでのスコア", f'{next_score:,}' if isinstance(next_score, int) else str(next_score))
+        custom_metric("下位ランクまでのスコア", f'{prev_score:,}' if isinstance(prev_score, int) else str(prev_score))
 
 
     st.divider()
@@ -537,7 +525,8 @@ def display_room_status(profile_data, input_room_id):
                 .stHtml .dataframe th:nth-child(6), .stHtml .dataframe td:nth-child(6) {
                     text-align: center !important; 
                     font-weight: bold;
-                    color: #ff4b4b; /* 公/フの文字色を強調 */
+                    /* 公/フの文字色はテーブル内でも標準色に統一 */
+                    color: inherit; 
                 }
                 /* ルーム名のセル幅を柔軟に */
                 .stHtml .dataframe th:nth-child(1), .stHtml .dataframe td:nth-child(1) {
