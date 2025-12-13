@@ -205,7 +205,6 @@ def display_room_status(profile_data, input_room_id):
     h3 { 
         margin-top: 20px; 
         padding-top: 10px; 
-        /* セクション見出しのボーダーを削除 */
         border-bottom: none; 
     }
 
@@ -266,15 +265,18 @@ def display_room_status(profile_data, input_room_id):
     
     /* HTMLテーブルのスタイル */
     .stHtml .dataframe {
-        width: 100%; 
         border-collapse: collapse;
         margin-top: 10px; 
-        /* 修正(再々): テーブル全体をセンタリング */
-        margin-left: auto;
-        margin-right: auto;
+        /* 中央寄せを試みるための指定 (幅を制限し、マージンをオートに) */
+        max-width: 1200px; /* 必要に応じて調整 */
+        margin-left: auto !important;
+        margin-right: auto !important;
+        width: 100%;
+        min-width: 800px; 
     }
-    /* テーブル全体のコンテナを中央寄せ */
-    .stHtml > div:last-child {
+    
+    /* テーブルを囲む要素のセンタリング */
+    .stHtml > div {
         display: flex;
         justify-content: center;
         width: 100%;
@@ -296,7 +298,6 @@ def display_room_status(profile_data, input_room_id):
         font-size: 13px; 
         line-height: 1.4;
         border-bottom: 1px solid #f0f0f0;
-        /* 基本のデータセルは中央寄せ (ただし、個別指定で上書き) */
         text-align: center; 
         white-space: nowrap; 
     }
@@ -582,7 +583,7 @@ def display_room_status(profile_data, input_room_id):
                 html_table = re.sub(r'>\s+<', '><', html_table)
 
                 # HTMLテーブルを直接 st.markdown で出力
-                # CSSでテーブル全体をセンタリングする調整を施しています
+                # これにより、上記のCSS指定がより直接的にテーブルに適用されます。
                 st.markdown(html_table, unsafe_allow_html=True)
         else:
             st.info("参加ルーム情報が取得できませんでした（ランキングイベントではない、またはデータがまだありません）。")
