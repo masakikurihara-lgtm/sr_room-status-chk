@@ -176,7 +176,7 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     current_room_data = None
     
     # --- 🎯 ターゲットルームの情報を、取得できたリスト全体から確実に探す（修正ロジック） ---
-    # 【最重要】上位10件以降で見つからない問題を解決するため、全リストを探索
+    # 上位10件以降で見つからない問題を解決するため、全リストを探索
     for room in room_list_data:
         # room_id が存在し、文字列化したものがターゲットIDと一致するか確認
         room_id_in_list = room.get("room_id")
@@ -215,9 +215,7 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
         # point/score は文字列またはNoneの可能性があるため、intにキャストしてソート
         top_participants.sort(key=lambda x: int(str(x.get('point', x.get('score', 0)) or 0)), reverse=True)
     
-    # 【お客様の指摘に対する修正】ここでリストを上位10件に制限する（表示用）
-    # この処理は、ターゲットルームの情報を取得した「後」に行われるため、
-    # ターゲットルームの情報（rank, point, level）の取得には影響を与えません。
+    # 上位10件に制限する（表示用）
     top_participants_for_display = top_participants[:limit]
 
 
@@ -710,16 +708,13 @@ def display_room_status(profile_data, input_room_id):
             # コンパクトに expander 内で表示
             with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
                 
-                # 🔥 ここに Pandasa の表示オプションを一時的に変更する処理を追加
-                # PandasがHTML出力時に数値列にインラインで右寄せスタイルを埋め込むのを防ぐため
-                # 一時的に全ての列（文字列、数値）のデフォルトのHTMLアラインメントを 'center' に設定
-                with pd.option_context('display.html.table_schema', False, 'display.html.use_mathjax', False, 'display.html.table_schema_all_string', True, 'display.colheader_justify', 'center'):
-                    html_table = dfp_display.to_html(
-                        escape=False, 
-                        index=False, 
-                        classes='dataframe data-table data-table-full-width' 
-                    )
-                # オプション変更のブロックここまで
+                # 【🔥🔥🔥 修正済み 🔥🔥🔥】
+                # Pandasの表示オプション操作（エラーの原因）を削除し、直接HTMLを生成します。
+                html_table = dfp_display.to_html(
+                    escape=False, 
+                    index=False, 
+                    classes='dataframe data-table data-table-full-width' 
+                )
                 
                 # HTMLを整形（改行や余分な空白を除去し、HTMLのサイズを小さくする）
                 html_table = html_table.replace('\n', '')
