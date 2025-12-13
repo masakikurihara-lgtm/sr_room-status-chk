@@ -381,8 +381,8 @@ def display_room_status(profile_data, input_room_id):
     .stHtml .dataframe tr {
         text-align: center !important; 
     }
-
-    /* 🔥 修正箇所: 見出し（th）のテキストアライメントを強制的に中央に設定 */
+    
+    /* 🔥 修正 1: 全てのヘッダーセル (th) を中央寄せに設定 */
     .stHtml .dataframe th {
         background-color: #e8eaf6; 
         color: #1a237e; 
@@ -390,18 +390,17 @@ def display_room_status(profile_data, input_room_id):
         padding: 8px 10px; 
         font-size: 14px;
         /* 見出し全体を中央寄せに統一 */
-        text-align: center !important; /* <--- この行を明確に追加/強調 */
+        text-align: center !important; 
         border-bottom: 2px solid #c5cae9; 
         white-space: nowrap;
     }
-    /* 🔥 修正箇所ここまで */
     
     .stHtml .dataframe td {
         padding: 6px 10px; 
         font-size: 13px; 
         line-height: 1.4;
         border-bottom: 1px solid #f0f0f0;
-        /* データのデフォルトは中央寄せを維持 */
+        /* データセル全体も中央寄せに設定 (今回はデータセルは中央でOKのため維持) */
         text-align: center !important; 
         white-space: nowrap; 
     }
@@ -409,11 +408,11 @@ def display_room_status(profile_data, input_room_id):
         background-color: #f7f9fd; 
     }
 
-    /* 列ごとの配置調整 (10列のインデックス調整) */
+    /* 🔥 修正 2: 列ごとの配置調整をすべて中央寄せ (center !important) で統一 */
     
     /* 1. ルーム名: 中央寄せ */
     .stHtml .dataframe th:nth-child(1), .stHtml .dataframe td:nth-child(1) {
-        text-align: center !important; /* 強制中央せ */
+        text-align: center !important; 
         min-width: 280px; 
         white-space: normal !important; 
     }
@@ -423,7 +422,7 @@ def display_room_status(profile_data, input_room_id):
     .stHtml .dataframe th:nth-child(4), .stHtml .dataframe td:nth-child(4), /* フォロワー数 */
     .stHtml .dataframe th:nth-child(5), .stHtml .dataframe td:nth-child(5), /* まいにち配信 */
     .stHtml .dataframe th:nth-child(9), .stHtml .dataframe td:nth-child(9) { /* ポイント */
-        text-align: center !important; /* 中央寄せに統一 */
+        text-align: center !important; /* 強制中央寄せ */
         width: 10%; 
     }
 
