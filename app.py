@@ -358,6 +358,7 @@ def display_room_status(profile_data, input_room_id):
     /* HTMLテーブルのスタイル */
     .stHtml .dataframe {
         border-collapse: collapse;
+        text-align: center !important; 
         margin-top: 10px; 
         width: 100%; /* 親要素の幅を使う */
         max-width: 1000px; /* テーブルの最大幅を制限 (調整可能) */
