@@ -278,6 +278,7 @@ def display_room_status(profile_data, input_room_id):
         justify-content: center; /* 子要素（テーブル）を水平方向の中央に配置 */
         width: 100%;
         overflow-x: auto;
+        text-align: center !important;
     }
 
     .stHtml .dataframe th {
