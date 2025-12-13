@@ -308,7 +308,7 @@ def display_room_status(profile_data, input_room_id):
     
     /* 1. ルーム名: 左寄せ */
     .stHtml .dataframe th:nth-child(1), .stHtml .dataframe td:nth-child(1) {
-        text-align: left !important; /* 強制左寄せ */
+        text-align: center !important; /* 強制中央せ */
         min-width: 280px; 
         white-space: normal !important; 
     }
