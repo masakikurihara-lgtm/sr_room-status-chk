@@ -1,678 +1,915 @@
 import streamlit as st
-import requests
 import pandas as pd
-import io
-import datetime
-from dateutil import parser
 import numpy as np
-import re
-import json 
+import io
+import requests
+import json  # JSONを扱うためにimport
+from datetime import datetime, date, timedelta
+import pytz
+import plotly.graph_objects as go
+import plotly.express as px
+import time
+from bs4 import BeautifulSoup
 
-# Streamlit の初期設定
+
+# ページ設定
 st.set_page_config(
-    page_title="SHOWROOM ルームステータス可視化ツール",
+    page_title="SHOWROOM ライバーKPI分析ツール",
+    page_icon="📊",
     layout="wide"
 )
 
-# --- 定数設定 ---
-ROOM_LIST_URL = "https://mksoul-pro.com/showroom/file/room_list.csv"
-ROOM_PROFILE_API = "https://www.showroom-live.com/api/room/profile?room_id={room_id}"
-API_EVENT_ROOM_LIST_URL = "https://www.showroom-live.com/api/event/room_list" 
-HEADERS = {} 
+# タイトル
+st.markdown(
+    "<h1 style='font-size:28px; text-align:center; color:#1f2937;'>SHOWROOM ライバーKPI分析ツール</h1>",
+    unsafe_allow_html=True
+)
 
-GENRE_MAP = {
-    112: "ミュージック", 102: "アイドル", 103: "タレント", 104: "声優",
-    105: "芸人", 107: "バーチャル", 108: "モデル", 109: "俳優",
-    110: "アナウンサー", 113: "クリエイター", 200: "ライバー",
-}
+# 説明文
+st.markdown(
+    "<p style='font-size:16px; text-align:center; color:#4b5563;'>"
+#    "分析方法を指定して、配信のパフォーマンスを分析します。"
+    ""
+    "</p>",
+    unsafe_allow_html=True
+)
 
-# --- ユーティリティ関数 ---
+st.markdown("---")
 
-def _safe_get(data, keys, default_value=None):
-    """ネストされた辞書から安全に値を取得するヘルパー関数"""
-    temp = data
-    for key in keys:
-        if isinstance(temp, dict) and key in temp:
-            temp = temp.get(key)
-        else:
-            return default_value
-    if temp is None or (isinstance(temp, (str, float)) and pd.isna(temp)):
-            return default_value
-    return temp
 
-def get_official_mark(room_id):
-    """簡易的な公/フ判定"""
+# --- 関数定義 ---
+#@st.cache_data(ttl=60) # キャッシュ保持を60秒に変更
+def fetch_event_data():
+    """イベントデータをCSVから読み込み、キャッシュする"""
     try:
-        room_id = int(room_id)
-        if room_id < 100000:
-             return "公"
-        elif room_id >= 100000:
-             return "フ"
-        else:
-            return "不明"
-    except (TypeError, ValueError):
-        return "不明"
+        #event_url = "https://mksoul-pro.com/showroom/file/sr-event-entry.csv"
+        event_url = "https://mksoul-pro.com/showroom/file/event_database.csv"
+        event_df = pd.read_csv(event_url, dtype={'アカウントID': str})
+        event_df['開始日時'] = pd.to_datetime(event_df['開始日時'], errors='coerce')
+        event_df['終了日時'] = pd.to_datetime(event_df['終了日時'], errors='coerce')
+        event_df_filtered = event_df[(event_df['紐付け'] == '○') & event_df['開始日時'].notna() & event_df['終了日時'].notna()].copy()
+        event_df_filtered = event_df_filtered.sort_values(by='開始日時', ascending=True)
+        return event_df_filtered
+    except Exception as e:
+        st.warning(f"イベント情報の取得に失敗しました: {e}")
+        return pd.DataFrame()
 
-
-def get_room_profile(room_id):
-    """ライバー（ルーム）プロフィール情報APIからデータを取得する"""
-    url = ROOM_PROFILE_API.format(room_id=room_id)
+# ★ 新しく追加した認証チェック関数
+@st.cache_data(ttl=3600)
+def check_authentication(account_id_to_check):
+    """アカウントIDが認証されているかチェックする"""
+    if account_id_to_check == "mksp":
+        return True
+    
+    ROOM_LIST_URL = "https://mksoul-pro.com/showroom/file/room_list.csv"
     try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException:
-        return None
+        # ヘッダーなしでD列(インデックス3)のみを文字列として読み込む
+        df = pd.read_csv(ROOM_LIST_URL, header=None, usecols=[3], dtype={3: str}, encoding='utf-8-sig')
+        # 欠損値を除外してリスト化
+        authenticated_ids = df[3].dropna().tolist()
+        return account_id_to_check in authenticated_ids
+    except Exception as e:
+        st.warning(f"認証情報の取得に失敗しました。: {e}")
+        return False # 認証に失敗した場合は処理を続行させない
 
-# --- イベント情報取得関数群 ---
-
-def get_total_entries(event_id):
-    params = {"event_id": event_id}
+# ★ 新しい関数: ルーム名をAPIから取得
+#@st.cache_data(ttl=3600)
+def fetch_room_name(room_id):
+    """SHOWROOM APIから最新のルーム名を取得する"""
+    if not room_id:
+        return "ルーム名不明"
+    
+    url = f"https://www.showroom-live.com/api/room/profile?room_id={room_id}"
     try:
-        response = requests.get(API_EVENT_ROOM_LIST_URL, headers=HEADERS, params=params, timeout=10)
-        if response.status_code == 404:
-            return 0
-        response.raise_for_status()
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()  # HTTPエラーをチェック
         data = response.json()
-        return data.get('total_entries', 0)
-    except requests.exceptions.RequestException:
-        return "N/A"
-    except ValueError:
-        return "N/A"
+        return data.get("room_name", "ルーム名不明")
+    except requests.exceptions.RequestException as e:
+        st.error(f"⚠️ ルーム名の取得に失敗しました: {e}")
+        return "ルーム名不明"
+    except json.JSONDecodeError:
+        st.error("⚠️ ルーム名の取得APIから無効な応答が返されました。")
+        return "ルーム名不明"
+    except Exception as e:
+        st.error(f"⚠️ ルーム名取得中に予期せぬエラーが発生しました: {e}")
+        return "ルーム名不明"
 
+def clear_analysis_results():
+    """分析結果の表示状態をリセットするコールバック関数"""
+    if 'run_analysis' in st.session_state:
+        st.session_state.run_analysis = False
 
-def get_event_room_list_data(event_id):
-    params = {"event_id": event_id}
-    try:
-        resp = requests.get(API_EVENT_ROOM_LIST_URL, headers=HEADERS, params=params, timeout=10)
-        if resp.status_code == 404:
-            return []
-        resp.raise_for_status()
-        data = resp.json()
-        
-        if isinstance(data, dict):
-            for k in ('list', 'room_list', 'event_entry_list', 'entries', 'data', 'event_list'):
-                if k in data and isinstance(data[k], list):
-                    return data[k]
-        if isinstance(data, list):
-            return data
-            
-    except Exception:
-        return []
-        
-    return []
+# --- UI入力セクション ---
+# ⑤ アカウントIDをパスワード形式で入力
+account_id = st.text_input(
+    "アカウントID（全体平均等は所定のIDを入力）:",
+    "",
+    type="password",
+    key="account_id_input",  # 新しくkeyを追加
+    on_change=clear_analysis_results # on_changeイベントを追加
+)
 
-def get_event_participants_info(event_id, target_room_id, limit=10):
-    """
-    イベント参加ルーム情報・状況APIから必要な情報を抽出する。
-    上位10ルームについては、個別のプロフィールAPIを叩いて詳細情報を統合する。
-    """
-    if not event_id:
-        return {"total_entries": "-", "rank": "-", "point": "-", "level": "-", "top_participants": []}
+# ① 分析方法の選択時に分析結果をクリア
+analysis_type = st.radio(
+    "分析方法を選択:",
+    ('期間で指定', 'イベントで指定'),
+    horizontal=True,
+    key='analysis_type_selector',
+    on_change=clear_analysis_results
+)
 
-    total_entries = get_total_entries(event_id)
-    room_list_data = get_event_room_list_data(event_id)
-    current_room_data = None
-    
-    # ターゲットルームの情報をリストから探す
-    for room in room_list_data:
-        if str(room.get("room_id")) == str(target_room_id):
-            current_room_data = room
-            break
+# 日本時間（JST）を明示的に指定
+JST = pytz.timezone('Asia/Tokyo')
+today = datetime.now(JST).date()
 
-    rank = _safe_get(current_room_data, ["rank"], "-")
-    point = _safe_get(current_room_data, ["point"], "-")
-    
-    # ターゲットルームのレベルを `event_entry.quest_level` から取得
-    level = _safe_get(current_room_data, ["event_entry", "quest_level"], "-")
-    
-    top_participants = room_list_data
-    if top_participants:
-        # pointは文字列またはNoneの可能性があるため、intにキャストしてソート
-        top_participants.sort(key=lambda x: int(str(x.get('point', 0) or 0)), reverse=True)
-    
-    top_participants = top_participants[:limit] # 上位10件に制限
+# UI要素の状態を保持する変数を初期化
+selected_date_range_val = None
+selected_event_val = None
 
-
-    # ✅ 上位10ルームのプロフィール情報を取得し、データをエンリッチ（統合）
-    enriched_participants = []
-    for participant in top_participants:
-        room_id = participant.get('room_id')
-        
-        # 取得必須のキーを初期化（Noneで初期化）
-        for key in ['room_level_profile', 'show_rank_subdivided', 'follower_num', 'live_continuous_days', 'is_official_api']: 
-            participant[key] = None
-            
-        if room_id:
-            profile = get_room_profile(room_id)
-            if profile:
-                # プロフィールAPIから取得した「ルームレベル」を 'room_level_profile' として格納
-                participant['room_level_profile'] = _safe_get(profile, ["room_level"], None)
-                participant['show_rank_subdivided'] = _safe_get(profile, ["show_rank_subdivided"], None)
-                participant['follower_num'] = _safe_get(profile, ["follower_num"], None)
-                participant['live_continuous_days'] = _safe_get(profile, ["live_continuous_days"], None)
-                participant['is_official_api'] = _safe_get(profile, ["is_official"], None)
-                
-                if not participant.get('room_name'):
-                     participant['room_name'] = _safe_get(profile, ["room_name"], f"Room {room_id}")
-        
-        # イベントの「レベル」を event_entry.quest_level から取得
-        participant['quest_level'] = _safe_get(participant, ["event_entry", "quest_level"], None)
-        
-        # 最終的に quest_level がセットされていない場合、ここでキーを追加（DataFrame化でエラーが出ないように）
-        if 'quest_level' not in participant:
-             participant['quest_level'] = None
-
-        enriched_participants.append(participant)
-
-    # 応答に必要な情報を返す
-    return {
-        "total_entries": total_entries if isinstance(total_entries, int) and total_entries > 0 else "-",
-        "rank": rank,
-        "point": point,
-        "level": level, # ターゲットルームのレベル
-        "top_participants": enriched_participants, # エンリッチされたリストを返す
-    }
-# --- イベント情報取得関数群ここまで ---
-
-
-def display_room_status(profile_data, input_room_id):
-    """取得したルームプロフィールデータとイベントデータを表示する"""
-    
-    # データを安全に取得
-    room_name = _safe_get(profile_data, ["room_name"], "取得失敗")
-    room_level = _safe_get(profile_data, ["room_level"], "-") # これはプロフィールのルームレベル
-    show_rank = _safe_get(profile_data, ["show_rank_subdivided"], "-")
-    next_score = _safe_get(profile_data, ["next_score"], "-")
-    prev_score = _safe_get(profile_data, ["prev_score"], "-")
-    follower_num = _safe_get(profile_data, ["follower_num"], "-")
-    live_continuous_days = _safe_get(profile_data, ["live_continuous_days"], "-")
-    is_official = _safe_get(profile_data, ["is_official"], None)
-    genre_id = _safe_get(profile_data, ["genre_id"], None)
-    event = _safe_get(profile_data, ["event"], {})
-
-    # 加工・整形
-    official_status = "公式" if is_official is True else "フリー" if is_official is False else "-"
-    genre_name = GENRE_MAP.get(genre_id, f"その他 ({genre_id})" if genre_id else "-")
-    
-    room_url = f"https://www.showroom-live.com/room/profile?room_id={input_room_id}"
-    
-    
-    # --- 💡 カスタムCSSの定義 ---
-    custom_styles = """
-    <style>
-    /* 全体のフォント統一と余白調整 */
-    h3 { 
-        margin-top: 20px; 
-        padding-top: 10px; 
-        border-bottom: none; 
-    }
-
-    /* タイトル領域のスタイル */
-    .room-title-container {
-        padding: 15px 20px;
-        margin-bottom: 20px;
-        border-radius: 8px;
-        background-color: #f0f2f6; 
-        border: 1px solid #e6e6e6;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-        display: flex;
-        align-items: center;
-    }
-    .room-title-container h1 {
-        margin: 0;
-        padding: 0;
-        line-height: 1.2;
-        font-size: 28px; 
-    }
-    .room-title-container .title-icon {
-        font-size: 30px; 
-        margin-right: 15px;
-        color: #ff4b4b; 
-    }
-    .room-title-container a {
-        text-decoration: none; 
-        color: #1c1c1c; 
-    }
-    
-    /* 🚀 ルーム基本情報のカスタムメトリック用スタイル */
-    .custom-metric-container {
-        margin-bottom: 15px; 
-        padding: 5px 0;
-    }
-    .metric-label {
-        font-size: 14px; 
-        color: #666; 
-        font-weight: 600;
-        margin-bottom: 5px;
-        display: block; 
-    }
-    .metric-value {
-        font-size: 24px !important; 
-        font-weight: bold;
-        line-height: 1.1;
-        color: #1c1c1c;
-    }
-    
-    /* st.metric の値を強制的に揃える (イベント情報セクション用) */
-    .stMetric label {
-        font-size: 14px; 
-    }
-    .stMetric > div > div:nth-child(2) > div {
-        font-size: 24px !important; 
-        font-weight: bold;
-    }
-    
-    /* HTMLテーブルのスタイル */
-    .stHtml .dataframe {
-        border-collapse: collapse;
-        margin-top: 10px; 
-        width: 100%; /* 親要素の幅を使う */
-        max-width: 1000px; /* テーブルの最大幅を制限 (調整可能) */
-        min-width: 800px; /* 最小幅を設定 */
-    }
-    
-    /* 中央寄せラッパー (テーブル全体を中央に配置) */
-    .center-table-wrapper {
-        display: flex;
-        justify-content: center; /* 子要素（テーブル）を水平方向の中央に配置 */
-        width: 100%;
-        overflow-x: auto;
-        text-align: center !important;
-    }
-
-    .stHtml .dataframe th {
-        background-color: #e8eaf6; 
-        color: #1a237e; 
-        font-weight: bold;
-        padding: 8px 10px; 
-        font-size: 14px;
-        /* ヘッダーのデフォルトは中央寄せを維持 */
-        text-align: center !important; 
-        border-bottom: 2px solid #c5cae9; 
-        white-space: nowrap;
-    }
-    .stHtml .dataframe td {
-        padding: 6px 10px; 
-        font-size: 13px; 
-        line-height: 1.4;
-        border-bottom: 1px solid #f0f0f0;
-        /* データのデフォルトは中央寄せを維持 */
-        text-align: center !important; 
-        white-space: nowrap; 
-    }
-    .stHtml .dataframe tbody tr:hover {
-        background-color: #f7f9fd; 
-    }
-
-    /* 列ごとの配置調整 (10列のインデックス調整) */
-    
-    /* 1. ルーム名: 中央寄せ */
-    .stHtml .dataframe th:nth-child(1), .stHtml .dataframe td:nth-child(1) {
-        text-align: center !important; /* 強制中央せ */
-        min-width: 280px; 
-        white-space: normal !important; 
-    }
-    
-    /* 数値系の列を中央寄せに統一 */
-    .stHtml .dataframe th:nth-child(2), .stHtml .dataframe td:nth-child(2), /* ルームレベル */
-    .stHtml .dataframe th:nth-child(4), .stHtml .dataframe td:nth-child(4), /* フォロワー数 */
-    .stHtml .dataframe th:nth-child(5), .stHtml .dataframe td:nth-child(5), /* まいにち配信 */
-    .stHtml .dataframe th:nth-child(9), .stHtml .dataframe td:nth-child(9) { /* ポイント */
-        text-align: center !important; /* 中央右寄せ */
-        width: 10%; 
-    }
-
-    /* 中央寄せを維持しつつ幅調整 (ランク、公式 or フリー、ルームID、順位、レベル) */
-    .stHtml .dataframe th:nth-child(3), .stHtml .dataframe td:nth-child(3), /* ランク */
-    .stHtml .dataframe th:nth-child(6), .stHtml .dataframe td:nth-child(6), /* 公式 or フリー */
-    .stHtml .dataframe th:nth-child(7), .stHtml .dataframe td:nth-child(7), /* ルームID */
-    .stHtml .dataframe th:nth-child(8), .stHtml .dataframe td:nth-child(8), /* 順位 */
-    .stHtml .dataframe th:nth-child(10), .stHtml .dataframe td:nth-child(10) { /* レベル (最終列) */
-        text-align: center !important; /* 強制中央寄せ */
-        width: 8%;
-    }
-    
-    /* '公式 or フリー' の強調 */
-    .stHtml .dataframe th:nth-child(6), .stHtml .dataframe td:nth-child(6) {
-        font-weight: bold;
-    }
-    
-    </style>
-    """
-    st.markdown(custom_styles, unsafe_allow_html=True)
-
-    # ヘルパー関数: カスタムスタイルを適用したメトリックを表示
-    def custom_metric(label, value):
-        st.markdown(
-            f'<div class="custom-metric-container">'
-            f'<span class="metric-label">{label}</span>'
-            f'<div class="metric-value">{value}</div>'
-            f'</div>',
-            unsafe_allow_html=True
-        )
-
-
-    # --- 1. 🎤 ルーム名/ID (タイトル領域) ---
-    st.markdown(
-        f'<div class="room-title-container">'
-        f'<span class="title-icon">🎤</span>'
-        f'<h1><a href="{room_url}" target="_blank">{room_name} ({input_room_id})</a> のルームステータス</h1>'
-        f'</div>', 
-        unsafe_allow_html=True
+# 条件に応じた入力ウィジェットの表示
+if analysis_type == '期間で指定':
+    default_end_date = today - timedelta(days=1)
+    default_start_date = default_end_date - timedelta(days=30)
+    selected_date_range_val = st.date_input(
+        "分析期間:",
+        (default_start_date, default_end_date),
+        min_value=date(2023, 9, 1), 
+        max_value=today,
+        on_change=clear_analysis_results
     )
-    
-    # --- 2. 📊 ルーム基本情報（第一カテゴリー） ---
-    st.markdown("### 📊 ルーム基本情報")
-    col1, col2, col3, col4 = st.columns([1.5, 1.5, 1.5, 1.5]) 
-
-    with col1:
-        custom_metric("ルームレベル", f'{room_level:,}' if isinstance(room_level, int) else str(room_level))
-        custom_metric("フォロワー数", f'{follower_num:,}' if isinstance(follower_num, int) else str(follower_num))
-        
-    with col2:
-        custom_metric("まいにち配信（日数）", live_continuous_days)
-        custom_metric("公式 or フリー", official_status)
-
-    with col3:
-        custom_metric("現在のSHOWランク", show_rank)
-        custom_metric("ジャンル", genre_name)
-
-    with col4:
-        custom_metric("上位ランクまでのスコア", f'{next_score:,}' if isinstance(next_score, int) else str(next_score))
-        custom_metric("下位ランクまでのスコア", f'{prev_score:,}' if isinstance(prev_score, int) else str(prev_score))
-
-
-    st.divider()
-
-    # --- 3. 🏆 現在の参加イベント情報（第二カテゴリー） ---
-    st.markdown("### 🏆 現在の参加イベント情報")
-
-    event_id = event.get("event_id")
-    event_name = event.get("name", "現在イベントに参加していません")
-    event_url = event.get("url", "#")
-    started_at_ts = event.get("started_at")
-    ended_at_ts = event.get("ended_at")
-
-    if event_id and event_name:
-        
-        # タイムスタンプを日本時間（JST）の文字列に変換
-        def _ts_to_jst_str(ts):
-            if ts:
-                dt_utc = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc)
-                dt_jst = dt_utc.astimezone(datetime.timezone(datetime.timedelta(hours=9)))
-                return dt_jst.strftime('%Y/%m/%d %H:%M')
-            return "-"
-
-        started_at_str = _ts_to_jst_str(started_at_ts)
-        ended_at_str = _ts_to_jst_str(ended_at_ts)
-
-        # イベント名とリンク
-        st.markdown(f"##### 🔗 **<a href='{event_url}' target='_blank'>{event_name}</a>**", unsafe_allow_html=True)
-        
-        # イベント期間の表示 (2カラム)
-        st.markdown("#### イベント期間")
-        event_col_time1, event_col_time2 = st.columns(2)
-        with event_col_time1:
-            st.info(f"📅 開始: **{started_at_str}**")
-        with event_col_time2:
-            st.info(f"🔚 終了: **{ended_at_str}**")
-
-        # イベント参加情報（API取得）
-        with st.spinner("イベント参加情報を取得中..."):
-            event_info = get_event_participants_info(event_id, input_room_id, limit=10)
-            
-            total_entries = event_info["total_entries"]
-            rank = event_info["rank"]
-            point = event_info["point"]
-            level = event_info["level"] # ターゲットルームのレベル
-            
-            # イベント参加情報表示 (4カラムで横並び) - st.metric を使用
-            st.markdown("#### 参加状況（自己ルーム）")
-            event_col_data1, event_col_data2, event_col_data3, event_col_data4 = st.columns([1, 1, 1, 1])
-            with event_col_data1:
-                st.metric(label="参加ルーム数", value=f"{total_entries:,}" if isinstance(total_entries, int) else str(total_entries), delta_color="off")
-            with event_col_data2:
-                st.metric(label="現在の順位", value=str(rank), delta_color="off")
-            with event_col_data3:
-                st.metric(label="獲得ポイント", value=f"{point:,}" if isinstance(point, int) else str(point), delta_color="off")
-            with event_col_data4:
-                st.metric(label="レベル", value=str(level), delta_color="off")
-            
-            top_participants = event_info["top_participants"]
-
-
-        st.divider()
-
-        # --- 4. 🔝 参加イベント上位10ルーム（HTMLテーブル） ---
-        st.markdown("### 🔝 参加イベント上位10ルーム")
-        
-        if top_participants:
-            
-            dfp = pd.DataFrame(top_participants)
-
-            # 必要なカラムが全て存在することを確認
-            cols = [
-                'room_name', 'room_level_profile', 'show_rank_subdivided', 'follower_num',
-                'live_continuous_days', 'room_id', 'rank', 'point',
-                'is_official_api', 'quest_level' # quest_levelを含む
-            ]
-            
-            # DataFrameに欠損しているカラムをNoneで埋める
-            for c in cols:
-                if c not in dfp.columns:
-                    dfp[c] = None
-                    
-            dfp_display = dfp[cols].copy()
-
-            # ▼ rename
-            dfp_display.rename(columns={
-                'room_name': 'ルーム名', 
-                'room_level_profile': 'ルームレベル', 
-                'show_rank_subdivided': 'ランク',
-                'follower_num': 'フォロワー数', 
-                'live_continuous_days': 'まいにち配信', 
-                'room_id': 'ルームID', 
-                'rank': '順位', 
-                'point': 'ポイント',
-                'is_official_api': 'is_official_api',
-                'quest_level': 'レベル' 
-            }, inplace=True)
-
-            # ▼ 公式 or フリー 判定関数（API情報使用）
-            def get_official_status_from_api(is_official_value):
-                """APIのis_official値に基づいて「公式」または「フリー」を判定する"""
-                if is_official_value is True:
-                    return "公式"
-                elif is_official_value is False:
-                    return "フリー"
-                else:
-                    return "不明"
-            
-            # ▼ 公式 or フリー を追加
-            dfp_display["公式 or フリー"] = dfp_display['is_official_api'].apply(get_official_status_from_api)
-            
-            dfp_display.drop(columns=['is_official_api'], inplace=True, errors='ignore')
-
-
-            # --- ▼ 数値フォーマット関数（カンマ区切りを切替可能） ▼ ---
-            def _fmt_int_for_display(v, use_comma=True):
-                """
-                数値を整形する。None, NaN, 空文字列の場合はハイフンを返す。
-                """
-                try:
-                    if v is None or (isinstance(v, (str, float)) and (str(v).strip() == "" or pd.isna(v))):
-                        return "-"
-                    
-                    num = float(v)
-                    
-                    if use_comma:
-                        return f"{int(num):,}"
-                    else:
-                        return f"{int(num)}"
-                        
-                except Exception:
-                    return str(v)
-
-            # --- ▼ 列ごとにフォーマット適用 ▼ ---
-            format_cols_no_comma = ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位', 'ルームID'] 
-            format_cols_comma = ['ポイント']
-
-            for col in format_cols_comma:
-                if col in dfp_display.columns:
-                    dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=True))
-            
-            for col in format_cols_no_comma:
-                if col in dfp_display.columns:
-                    dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=False))
-            
-
-            # 🔥 「レベル」列のフォーマット処理
-            def format_level_safely_FINAL(val):
-                """APIの値(val)を安全にレベル表示用文字列に変換する"""
-                if val is None or pd.isna(val) or str(val).strip() == "" or val is False or (isinstance(val, (list, tuple)) and not val):
-                    return "-"
-                else:
-                    try:
-                        return str(int(val))
-                    except (ValueError, TypeError):
-                        return "-"
-
-            if 'レベル' in dfp_display.columns:
-                dfp_display['レベル'] = dfp_display['レベル'].apply(format_level_safely_FINAL)
-            
-            
-            # 最終的な欠損値/空文字列のハイフン化（主にランクなど数値フォーマットを通らない文字列列用）
-            for col in ['ランク']: 
-                if col in dfp_display.columns:
-                    dfp_display[col] = dfp_display[col].apply(lambda x: '-' if x == '' or pd.isna(x) else x)
-
-
-            # --- ルーム名をリンクに置き換える ---
-            def _make_link_final(row):
-                rid = row['ルームID'] 
-                name = row['ルーム名']
-                if not name:
-                    name = f"room_{rid}"
-                
-                # ルームIDがハイフンでない、つまり有効な値の場合のみリンクを生成
-                if rid != '-':
-                    return f'<a href="https://www.showroom-live.com/room/profile?room_id={rid}" target="_blank">{name}</a>'
-                return name
-
-            # リンクを生成し、dfp_displayの'ルーム名'列を上書き
-            dfp_display['ルーム名'] = dfp_display.apply(_make_link_final, axis=1)
-            
-            # ▼ 列順をここで整える
-            dfp_display = dfp_display[
-                ['ルーム名', 'ルームレベル', 'ランク', 'フォロワー数',
-                 'まいにち配信', '公式 or フリー', 'ルームID', '順位', 'ポイント', 'レベル'] 
-            ]
-            
-            # コンパクトに expander 内で表示
-            with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
-                
-                html_table = dfp_display.to_html(
-                    escape=False, 
-                    index=False, 
-                    justify='center', 
-                    classes='dataframe data-table data-table-full-width' 
-                )
-                
-                html_table = html_table.replace('\n', '')
-                html_table = re.sub(r'>\s+<', '><', html_table)
-
-                # テーブル全体を 'center-table-wrapper' でラップする
-                centered_html = f'<div class="center-table-wrapper">{html_table}</div>'
-
-                # HTMLテーブルを直接 st.markdown で出力
-                st.markdown(centered_html, unsafe_allow_html=True)
-
+else:  # 'イベントで指定'
+    if account_id:
+        # ★★★ ここで認証チェックを先に行う ★★★
+        if not check_authentication(account_id):
+            st.error(f"指定されたアカウントID（{account_id}）は認証されていません。")
         else:
-            st.info("参加ルーム情報が取得できませんでした（ランキングイベントではない、またはデータがまだありません）。")
+            # 認証成功時のみイベント取得処理を実行
+            event_df = fetch_event_data()
+            if not event_df.empty:
+                #user_events = event_df[event_df['アカウントID'] == account_id].sort_values('開始日時', ascending=False)
+                user_events = event_df[(event_df['アカウントID'] == account_id) & (event_df['開始日時'] >= '2023-09-01')].sort_values('開始日時', ascending=False)
+                if not user_events.empty:
+                    event_names = user_events['イベント名'].unique().tolist()
+                    if event_names:
+                        # イベント変更時に分析結果をクリアするコールバックを追加
+                        selected_event_val = st.selectbox(
+                            "分析するイベントを選択:", 
+                            options=event_names,
+                            on_change=clear_analysis_results
+                        )
+                        
+                        event_details_to_link = user_events[user_events['イベント名'] == selected_event_val]
+                        if not event_details_to_link.empty:
+                            start_time = event_details_to_link.iloc[0]['開始日時']
+                            end_time = event_details_to_link.iloc[0]['終了日時']
+                            
+                            # 💡 【ここを置き換え】順位・ポイント・レベル表示部
+                            if pd.notna(start_time) and pd.notna(end_time):
+                                start_time_str = start_time.strftime('%Y/%m/%d %H:%M')
+                                end_time_str = end_time.strftime('%Y/%m/%d %H:%M')
+                                st.markdown(f"**イベント期間：{start_time_str} - {end_time_str}**", unsafe_allow_html=True)
 
+                            # ==============================================
+                            # ✅ 新ロジック: 終了日が未来ならAPIで取得、それ以外はCSV
+                            # ==============================================
+                            use_api = False
+                            try:
+                                JST = pytz.timezone("Asia/Tokyo")
+                                now_jst = datetime.now(JST)
+                                event_end_jst = end_time if end_time.tzinfo else JST.localize(end_time)
+                                if event_end_jst > now_jst:
+                                    use_api = True
+                            except Exception as e:
+                                st.warning(f"⚠️ イベント終了日時の判定に失敗しました ({e})")
+                                use_api = False
+
+                            event_rank = event_point = event_level = "N/A"
+
+                            if use_api:
+                                try:
+                                    #st.caption("※開催中イベントのため、最新順位をAPIから取得しています。")
+                                    api_url_base = "https://www.showroom-live.com/api/event/room_list"
+                                    all_rooms = []
+                                    # 🔁 ページを全取得（最大50ページ程度まで安全上限）
+                                    for page in range(1, 60):
+                                        api_url = f"{api_url_base}?event_id={event_details_to_link.iloc[0]['event_id']}&p={page}"
+                                        resp = requests.get(api_url, timeout=5)
+                                        if resp.status_code != 200:
+                                            break
+                                        data = resp.json()
+                                        rooms = data.get("list") or data.get("room_list") or []
+                                        if not rooms:
+                                            break
+                                        all_rooms.extend(rooms)
+                                        if len(rooms) < 30:
+                                            break
+
+                                    # 🎯 該当room_idを抽出（アカウントID一致からCSVでroom_idを取得）
+                                    target_room_id = str(event_details_to_link.iloc[0]["ルームID"]) if "ルームID" in event_details_to_link.columns else None
+                                    matched = next((r for r in all_rooms if str(r.get("room_id")) == str(target_room_id)), None)
+
+                                    if matched:
+                                        event_rank = matched.get("rank", "-")
+                                        event_point = matched.get("point", 0)
+                                        # event_entry内のquest_levelを安全に取得
+                                        ev = matched.get("event_entry") or {}
+                                        event_level = ev.get("quest_level", "")
+                                    else:
+                                        st.warning("⚠️ 対象ルームがAPI結果に見つかりません。CSVデータを使用します。")
+                                        use_api = False
+
+                                except Exception as e:
+                                    st.warning(f"⚠️ API取得失敗のため、CSVデータを使用します。詳細: {e}")
+                                    use_api = False
+
+                            # 🟡 API未使用または失敗時はCSVの値を利用
+                            if not use_api:
+                                event_rank = event_details_to_link.iloc[0].get("順位", "N/A")
+                                event_point = event_details_to_link.iloc[0].get("ポイント", "N/A")
+                                event_level = event_details_to_link.iloc[0].get("レベル", "N/A")
+
+                            # ✅ ポイントのカンマ区切り処理
+                            try:
+                                event_point_display = f"{int(event_point):,}"
+                            except Exception:
+                                event_point_display = str(event_point)
+
+                            # ✅ 表示部分（既存デザイン踏襲）
+                            st.markdown(f"**順位：{event_rank} / ポイント：{event_point_display} / レベル：{event_level}**", unsafe_allow_html=True)
+                            # ==============================================
+
+
+                            # 以前の修正: イベントURLへのリンクを追加
+                            if 'URL' in event_details_to_link.columns:
+                                event_url = event_details_to_link.iloc[0]['URL']
+                            else:
+                                event_url = None
+                            
+                            if pd.notna(event_url) and event_url != '':
+                                st.markdown(f"**▶ [イベントページへ移動する]({event_url})**", unsafe_allow_html=True)
+                    
+                    else:
+                        st.info("このアカウントIDに紐づくイベントはありません。")
+                else:
+                    st.info("このアカウントIDに紐づくイベントデータが見つかりませんでした。")
+            else:
+                st.warning("イベントデータを取得できませんでした。")
     else:
-        st.info("現在、このルームはイベントに参加していません。")
+        st.info("先にアカウントIDを入力してください。")
+
+    # ★ 修正箇所: 注意書きをif elseブロックの外に移動
+    st.caption("※分析したい参加イベントが紐づいていない（見つからない）場合は運営にご照会ください。")
+
+
+# ボタンの前に余白を追加
+st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+
+
+# データの読み込みと前処理関数
+# @st.cache_data(ttl=3600) # データのキャッシュを1時間保持
+def load_and_preprocess_data(account_id, start_date, end_date):
+    if not account_id:
+        st.error("アカウントIDを入力してください。")
+        return None, None, None, None
+
+    if start_date > end_date:
+        st.error("開始日は終了日より前の日付を選択してください。")
+        return None, None, None, None
+
+    loop_start_date = start_date.date() if isinstance(start_date, (datetime, pd.Timestamp)) else start_date
+    loop_end_date = end_date.date() if isinstance(end_date, (datetime, pd.Timestamp)) else end_date
+
+    all_dfs = []
+    
+    # 読み込み対象の月をリストアップ
+    target_months = []
+    current_date_loop = loop_start_date
+    while current_date_loop <= loop_end_date:
+        target_months.append(current_date_loop)
+        if current_date_loop.month == 12:
+            current_date_loop = date(current_date_loop.year + 1, 1, 1)
+        else:
+            current_date_loop = date(current_date_loop.year, current_date_loop.month + 1, 1)
+    
+    total_months = len(target_months)
+
+    # プログレスバーを一本で実装
+    progress_bar = st.progress(0)
+    progress_text = st.empty()
+    
+    # 2回目の読み込み
+    is_mksp = account_id == "mksp"
+    mksp_df_temp = pd.DataFrame()
+    df_temp = pd.DataFrame()
+    room_id_temp = None
+
+    total_steps = 2 * total_months if not is_mksp else total_months
+
+    # 1回目：全体データ(mksp)の読み込み
+    for i, current_date in enumerate(target_months):
+        year = current_date.year
+        month = current_date.month
+        progress = (i + 1) / total_steps
+        progress_bar.progress(progress)
+        progress_text.text(f"📊 全体データ ({year}年{month}月) を取得中... ({i+1}/{total_months})")
+        
+        url = f"https://mksoul-pro.com/showroom/csv/{year:04d}-{month:02d}_all_all.csv"
+        
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            csv_data = io.StringIO(response.content.decode('utf-8-sig'))
+            df = pd.read_csv(csv_data, on_bad_lines='skip')
+            df.columns = df.columns.str.strip().str.replace('"', '')
+            all_dfs.append(df)
+        
+        except requests.exceptions.RequestException as e:
+            if e.response and e.response.status_code == 404:
+                # st.warning(f"⚠️ {year}年{month}月のデータが見つかりませんでした。スキップします。")
+                pass
+            else:
+                st.error(f"❌ データの取得中に予期せぬエラーが発生しました: {e}")
+                progress_bar.empty()
+                progress_text.empty()
+                return None, None
+        except Exception as e:
+            st.error(f"❌ CSVファイルの処理中に予期せぬエラーが発生しました。詳細: {e}")
+            progress_bar.empty()
+            progress_text.empty()
+            return None, None
+            
+    if not all_dfs:
+        st.error(f"選択された期間のデータが一つも見つかりませんでした。")
+        progress_bar.empty()
+        progress_text.empty()
+        return None, None, None, None
+
+    combined_df = pd.concat(all_dfs, ignore_index=True)
+    if "配信日時" not in combined_df.columns:
+        raise KeyError("CSVファイルに '配信日時' 列が見つかりませんでした。")
+    combined_df["配信日時"] = pd.to_datetime(combined_df["配信日時"])
+
+    mksp_df_temp = combined_df.copy()
+
+    # 2回目：個別アカウントIDの読み込み（mkspではない場合のみ）
+    if not is_mksp:
+        individual_dfs = []
+        for i, current_date in enumerate(target_months):
+            year = current_date.year
+            month = current_date.month
+            progress = (total_months + i + 1) / total_steps
+            progress_bar.progress(progress)
+            progress_text.text(f"👤 個人データ ({year}年{month}月) を取得中... ({i+1}/{total_months})")
+            
+            url = f"https://mksoul-pro.com/showroom/csv/{year:04d}-{month:02d}_all_all.csv"
+            
+            try:
+                response = requests.get(url)
+                response.raise_for_status()
+                csv_data = io.StringIO(response.content.decode('utf-8-sig'))
+                df = pd.read_csv(csv_data, on_bad_lines='skip')
+                df.columns = df.columns.str.strip().str.replace('"', '')
+                individual_dfs.append(df)
+            
+            except requests.exceptions.RequestException as e:
+                if e.response and e.response.status_code == 404:
+                    # st.warning(f"⚠️ {year}年{month}月のデータが見つかりませんでした。スキップします。")
+                    pass
+                else:
+                    st.error(f"❌ データの取得中に予期せぬエラーが発生しました: {e}")
+                    progress_bar.empty()
+                    progress_text.empty()
+                    return None, None, None, None
+            except Exception as e:
+                st.error(f"❌ CSVファイルの処理中に予期せぬエラーが発生しました。詳細: {e}")
+                progress_bar.empty()
+                progress_text.empty()
+                return None, None, None, None
+
+        if not individual_dfs:
+            st.warning(f"指定されたアカウントID（{account_id}）のデータが選択された期間に見つかりませんでした。")
+            progress_bar.empty()
+            progress_text.empty()
+            return None, None, None, None
+            
+        individual_combined_df = pd.concat(individual_dfs, ignore_index=True)
+        if "配信日時" not in individual_combined_df.columns:
+            raise KeyError("CSVファイルに '配信日時' 列が見つかりませんでした。")
+        individual_combined_df["配信日時"] = pd.to_datetime(individual_combined_df["配信日時"])
+
+        filtered_by_account_df = individual_combined_df[individual_combined_df["アカウントID"] == account_id].copy()
+
+        if filtered_by_account_df.empty:
+            st.warning(f"指定されたアカウントID（{account_id}）の配信データが選択された期間に見つかりませんでした。")
+            progress_bar.empty()
+            progress_text.empty()
+            return None, None, None, None
+        
+        if isinstance(start_date, (datetime, pd.Timestamp)):
+            filtered_df = filtered_by_account_df[
+                (filtered_by_account_df["配信日時"] >= start_date) & 
+                (filtered_by_account_df["配信日時"] <= end_date)
+            ].copy()
+        else:
+            filtered_df = filtered_by_account_df[
+                (filtered_by_account_df["配信日時"].dt.date >= start_date) & 
+                (filtered_by_account_df["配信日時"].dt.date <= end_date)
+            ].copy()
+        
+        df_temp = filtered_df.copy()
+        if "ルームID" in df_temp.columns and not df_temp.empty:
+            room_id_temp = df_temp["ルームID"].iloc[0]
+            # ルーム名を取得して一時変数に格納
+            room_name_temp = fetch_room_name(room_id_temp)
+        else:
+            room_name_temp = "ルーム名不明"
+
+
+    # mkspの場合は、mksp_df_tempをそのままdf_tempとして扱う
+    else:
+        filtered_by_account_df = combined_df.copy()
+        if isinstance(start_date, (datetime, pd.Timestamp)):
+            filtered_df = filtered_by_account_df[
+                (filtered_by_account_df["配信日時"] >= start_date) & 
+                (filtered_by_account_df["配信日時"] <= end_date)
+            ].copy()
+        else:
+            filtered_df = filtered_by_account_df[
+                (filtered_by_account_df["配信日時"].dt.date >= start_date) & 
+                (filtered_by_account_df["配信日時"].dt.date <= end_date)
+            ].copy()
+        
+        df_temp = filtered_df.copy()
+        room_id_temp = None
+        room_name_temp = "ルーム名不明" # mkspの場合はルーム名を取得しない
+
+    # 数値型に変換する共通処理
+    def convert_to_numeric(df):
+        if df is None or df.empty:
+            return df
+        numeric_cols = [
+            "合計視聴数", "視聴会員数", "フォロワー数", "獲得支援point", "コメント数",
+            "ギフト数", "期限あり/期限なしSG総額", "コメント人数", "初コメント人数",
+            "ギフト人数", "初ギフト人数", "フォロワー増減数", "初ルーム来訪者数", "配信時間(分)", "短時間滞在者数",
+            "期限あり/期限なしSGのギフティング数", "期限あり/期限なしSGのギフティング人数"
+        ]
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(
+                    df[col].astype(str).str.replace(",", "").replace("-", "0"),
+                    errors='coerce'
+                ).fillna(0)
+        return df
+
+    mksp_df_temp = convert_to_numeric(mksp_df_temp)
+    df_temp = convert_to_numeric(df_temp)
+
+    # 最終的なプログレスバーとテキストを非表示にする
+    progress_bar.empty()
+    progress_text.empty()
+    
+    return mksp_df_temp, df_temp, room_id_temp, room_name_temp
+
+def categorize_time_of_day_with_range(hour):
+    if 3 <= hour < 6: return "早朝 (3-6時)"
+    elif 6 <= hour < 9: return "朝 (6-9時)"
+    elif 9 <= hour < 12: return "午前 (9-12時)"
+    elif 12 <= hour < 14: return "昼 (12-14時)"
+    elif 14 <= hour < 15: return "昼跨ぎ (14-15時)"
+    elif 15 <= hour < 18: return "午後 (15-18時)"
+    elif 18 <= hour < 21: return "夜前半 (18-21時)"
+    elif 21 <= hour < 22: return "夜ピーク (21-22時)"
+    elif 22 <= hour < 24: return "夜後半 (22-24時)"
+    else: return "深夜 (0-3時)"
+
+def merge_event_data(df_to_merge, event_df):
+    """配信データにイベント名をマージする"""
+    if event_df.empty:
+        df_to_merge['イベント名'] = ""
+        return df_to_merge
+
+    def find_event_name(row):
+        account_id = str(row['アカウントID'])
+        stream_time = row['配信日時']
+        
+        matching_events = event_df[
+            (event_df['アカウントID'] == account_id) &
+            (event_df['開始日時'] <= stream_time) &
+            (event_df['終了日時'] >= stream_time)
+        ]
+        
+        if not matching_events.empty:
+            return matching_events.iloc[0]['イベント名']
+        return ""
+
+    df_to_merge['イベント名'] = df_to_merge.apply(find_event_name, axis=1)
+    return df_to_merge
 
 
 # --- メインロジック ---
-# st.session_stateの初期化 (認証機能のために必須)
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
-if 'show_status' not in st.session_state:
-    st.session_state.show_status = False
-if 'input_room_id' not in st.session_state:
-    st.session_state.input_room_id = ""
+if st.button("分析を実行"):
+    # 1. アカウントIDの入力チェック
+    if not account_id:
+        st.error("アカウントIDを入力してください。")
+        st.session_state.run_analysis = False
+    # 2. 認証チェック
+    elif not check_authentication(account_id):
+        st.error(f"指定されたアカウントID（{account_id}）は認証されていません。")
+        st.session_state.run_analysis = False
+    # 3. 全てのチェックをパスした場合、分析処理を開始
+    else:
+        final_start_date, final_end_date = None, None
 
-
-if not st.session_state.authenticated:
-    st.title("💖 SHOWROOM ルームステータス可視化ツール")
-    st.markdown("##### 🔑 認証コードを入力してください")
-    input_auth_code = st.text_input(
-        "認証コードを入力してください:",
-        placeholder="認証コード",
-        type="password",
-        key="room_id_input_auth"
-    )
-    if st.button("認証する"):
-        if input_auth_code:
-            with st.spinner("認証中..."):
-                try:
-                    response = requests.get(ROOM_LIST_URL, timeout=5)
-                    response.raise_for_status()
-                    # 認証コードリストの取得と検証ロジックを維持
-                    room_df = pd.read_csv(io.StringIO(response.text), header=None, dtype=str)
-                    valid_codes = set(str(x).strip() for x in room_df.iloc[:, 0].dropna())
-                    if input_auth_code.strip() in valid_codes:
-                        st.session_state.authenticated = True
-                        st.success("✅ 認証に成功しました。ツールを利用できます。")
-                        st.rerun()
-                    else:
-                        st.error("❌ 認証コードが無効です。正しい認証コードを入力してください。")
-                except Exception as e:
-                    st.error(f"認証リストを取得できませんでした: {e}")
-        else:
-            st.warning("認証コードを入力してください。")
-    st.stop()
-
-if st.session_state.authenticated:
-    st.title("💖 SHOWROOM ルームステータス可視化ツール")
-    st.markdown("### 🔎 ルームIDの入力")
-    
-    input_room_id_current = st.text_input(
-        "表示したいルームIDを入力してください:",
-        placeholder="例: 496122",
-        key="room_id_input_main",
-        value=st.session_state.input_room_id
-    ).strip()
-    
-    if input_room_id_current != st.session_state.input_room_id:
-        st.session_state.input_room_id = input_room_id_current
-        st.session_state.show_status = False
+        if st.session_state.analysis_type_selector == '期間で指定':
+            if selected_date_range_val and len(selected_date_range_val) == 2:
+                final_start_date, final_end_date = selected_date_range_val
+            else:
+                st.error("有効な期間が選択されていません。")
         
-    if st.button("ルームステータスを表示"):
-        if st.session_state.input_room_id and st.session_state.input_room_id.isdigit():
-            st.session_state.show_status = True
-        elif st.session_state.input_room_id:
-            st.error("ルームIDは数字で入力してください。")
+        else:  # 'イベントで指定'
+            if not selected_event_val:
+                st.error("分析対象のイベントが選択されていません。")
+            else:
+                event_df = fetch_event_data()
+                event_details = event_df[
+                    (event_df['アカウントID'] == account_id) & 
+                    (event_df['イベント名'] == selected_event_val)
+                ]
+                if not event_details.empty:
+                    final_start_date = event_details.iloc[0]['開始日時']
+                    final_end_date = event_details.iloc[0]['終了日時']
+                else:
+                    st.error("選択されたイベントの詳細が見つかりませんでした。")
+
+        if final_start_date and final_end_date:
+            st.session_state.run_analysis = True
+            st.session_state.start_date = final_start_date
+            st.session_state.end_date = final_end_date
+            st.session_state.account_id = account_id
         else:
-            st.warning("ルームIDを入力してください。")
-            
-    st.divider()
+            st.session_state.run_analysis = False
+
+
+if 'run_analysis' not in st.session_state:
+    st.session_state.run_analysis = False
+
+if st.session_state.get('run_analysis', False):
+    start_date = st.session_state.start_date
+    end_date = st.session_state.end_date
+    account_id = st.session_state.account_id # 保存したaccount_idを使用
+
+    mksp_df, df, room_id, room_name = load_and_preprocess_data(account_id, start_date, end_date)
     
-    if st.session_state.show_status and st.session_state.input_room_id:
-        with st.spinner(f"ルームID {st.session_state.input_room_id} の情報を取得中..."):
-            room_profile = get_room_profile(st.session_state.input_room_id)
-        if room_profile:
-            # display_room_status 関数を呼び出し
-            display_room_status(room_profile, st.session_state.input_room_id)
-        else:
-            st.error(f"ルームID {st.session_state.input_room_id} の情報を取得できませんでした。IDを確認してください。")
+    if df is None or df.empty:
+        st.error("指定された期間・アカウントIDの配信データが見つかりませんでした。アカウントIDや期間を再度ご確認ください。")
+        st.session_state.run_analysis = False # 分析を中断する
+    else:
+        st.success("データの読み込みが完了しました！")
+        
+        # --- ここから：イベント指定時は分析用データ自体を選択イベントの配信のみで上書きする ---
+        # event_df_master を取得
+        event_df_master = fetch_event_data()
+
+        # ① 「時間帯」列を先に作っておく（列順に影響を出さないように）
+        if '時間帯' not in df.columns:
+            df['時間帯'] = df['配信日時'].dt.hour.apply(categorize_time_of_day_with_range)
+
+        # ② 既存のマージ関数でイベント名を付与（元コードの merge_event_data を使用）
+        df = merge_event_data(df, event_df_master)
+
+        # ③ イベントで指定モードの場合は、選択イベントの**実際参加期間**の配信のみ抽出する
+        #    （選択イベント名が available か確認してから絞り込む）
+        if st.session_state.get('analysis_type_selector') == 'イベントで指定':
+            # selectboxで使っている変数が selected_event_val ならそれを優先、なければセッションを参照
+            selected_ev = selected_event_val if 'selected_event_val' in locals() and selected_event_val else st.session_state.get('selected_event_val', None)
+
+            if selected_ev:
+                # 選択イベントの期間を event_db から取得（アカウントIDで絞る）
+                ev_details = event_df_master[
+                    (event_df_master['アカウントID'] == account_id) &
+                    (event_df_master['イベント名'] == selected_ev)
+                ]
+                if not ev_details.empty:
+                    ev_start = ev_details.iloc[0]['開始日時']
+                    ev_end = ev_details.iloc[0]['終了日時']
+
+                    # **両方の条件**で絞る：① イベント名が選択イベント、かつ ② 配信日時がそのイベント期間内
+                    df = df[
+                        (df['イベント名'] == selected_ev) &
+                        (df['配信日時'] >= ev_start) &
+                        (df['配信日時'] <= ev_end)
+                    ].copy()
+                else:
+                    # イベント詳細が見つからなければ、念のためイベント名でのみフィルタ（堅牢化）
+                    df = df[df['イベント名'] == selected_ev].copy()
+        # --- ここまで ---
+        
+        
+        if mksp_df is not None and not mksp_df.empty:
+            numeric_cols_to_check = [
+                '合計視聴数', '初ルーム来訪者数', 'コメント人数', '初コメント人数', 'ギフト人数',
+                '初ギフト人数', '視聴会員数', '短時間滞在者数', 'ギフト数',
+                '期限あり/期限なしSGのギフティング数', '期限あり/期限なしSGのギフティング人数'
+            ]
+            for col in numeric_cols_to_check:
+                if col in mksp_df.columns:
+                    mksp_df[col] = pd.to_numeric(mksp_df[col], errors='coerce').fillna(0)
+
+            filtered_df_visit = mksp_df[mksp_df['合計視聴数'] > 0].copy()
+            st.session_state.mk_avg_rate_visit = (filtered_df_visit['初ルーム来訪者数'] / filtered_df_visit['合計視聴数']).mean() * 100 if not filtered_df_visit.empty else 0
+            st.session_state.mk_median_rate_visit = (filtered_df_visit['初ルーム来訪者数'] / filtered_df_visit['合計視聴数']).median() * 100 if not filtered_df_visit.empty else 0
+
+            filtered_df_comment = mksp_df[mksp_df['コメント人数'] > 0].copy()
+            st.session_state.mk_avg_rate_comment = (filtered_df_comment['初コメント人数'] / filtered_df_comment['コメント人数']).mean() * 100 if not filtered_df_comment.empty else 0
+            st.session_state.mk_median_rate_comment = (filtered_df_comment['初コメント人数'] / filtered_df_comment['コメント人数']).median() * 100 if not filtered_df_comment.empty else 0
+
+            filtered_df_gift = mksp_df[mksp_df['ギフト人数'] > 0].copy()
+            st.session_state.mk_avg_rate_gift = (filtered_df_gift['初ギフト人数'] / filtered_df_gift['ギフト人数']).mean() * 100 if not filtered_df_gift.empty else 0
+            st.session_state.mk_median_rate_gift = (filtered_df_gift['初ギフト人数'] / filtered_df_gift['ギフト人数']).median() * 100 if not filtered_df_gift.empty else 0
+
+            filtered_df_short_stay = mksp_df[mksp_df['視聴会員数'] > 0].copy()
+            st.session_state.mk_avg_rate_short_stay = (filtered_df_short_stay['短時間滞在者数'] / filtered_df_short_stay['視聴会員数']).mean() * 100 if not filtered_df_short_stay.empty else 0
+            st.session_state.mk_median_rate_short_stay = (filtered_df_short_stay['短時間滞在者数'] / filtered_df_short_stay['視聴会員数']).median() * 100 if not filtered_df_short_stay.empty else 0
+
+            filtered_df_sg_gift = mksp_df[mksp_df['ギフト数'] > 0].copy()
+            st.session_state.mk_avg_rate_sg_gift = (filtered_df_sg_gift['期限あり/期限なしSGのギフティング数'] / filtered_df_sg_gift['ギフト数']).mean() * 100 if not filtered_df_sg_gift.empty else 0
+            st.session_state.mk_median_rate_sg_gift = (filtered_df_sg_gift['期限あり/期限なしSGのギフティング数'] / filtered_df_sg_gift['ギフト数']).median() * 100 if not filtered_df_sg_gift.empty else 0
+
+            filtered_df_sg_person = mksp_df[mksp_df['ギフト人数'] > 0].copy()
+            st.session_state.mk_avg_rate_sg_person = (filtered_df_sg_person['期限あり/期限なしSGのギフティング人数'] / filtered_df_sg_person['ギフト人数']).mean() * 100 if not filtered_df_sg_person.empty else 0
+            st.session_state.mk_median_rate_sg_person = (filtered_df_sg_person['期限あり/期限なしSGのギフティング人数'] / filtered_df_sg_person['ギフト人数']).median() * 100 if not filtered_df_sg_person.empty else 0
+
+        if account_id == "mksp":
+            st.subheader("💡 全ライバーの集計データ")
+            st.info("このビューでは、個人関連データは表示されません。")
             
-    st.markdown("---")
-    
-    if st.button("認証を解除する", help="認証状態をリセットし、認証コード入力画面に戻ります"):
-        st.session_state.authenticated = False
-        st.session_state.show_status = False
-        st.session_state.input_room_id = ""
-        st.rerun()
+            total_support_points = int(df["獲得支援point"].sum())
+            total_viewers = int(df["合計視聴数"].sum())
+            total_comments = int(df["コメント数"].sum())
+            
+            st.markdown(f"**合計獲得支援ポイント:** {total_support_points:,} pt")
+            st.markdown(f"**合計視聴数:** {total_viewers:,} 人")
+            st.markdown(f"**合計コメント数:** {total_comments:,} 件")
+
+            st.subheader("📊 時間帯別パフォーマンス分析 (平均値)")
+            st.info("※ このグラフは、各時間帯に配信した際の各KPIの**平均値**を示しています。棒上の数字は、その時間帯の配信件数です。")
+            
+            df['時間帯'] = df['配信日時'].dt.hour.apply(categorize_time_of_day_with_range)
+            
+            time_of_day_kpis_mean = df.groupby('時間帯').agg({
+                '獲得支援point': 'mean',
+                '合計視聴数': 'mean',
+                'コメント数': 'mean'
+            }).reset_index()
+
+            time_of_day_order = ["深夜 (0-3時)", "早朝 (3-6時)", "朝 (6-9時)", "午前 (9-12時)", "昼 (12-14時)", "昼跨ぎ (14-15時)", "午後 (15-18時)", "夜前半 (18-21時)", "夜ピーク (21-22時)", "夜後半 (22-24時)"]
+            time_of_day_kpis_mean['時間帯'] = pd.Categorical(time_of_day_kpis_mean['時間帯'], categories=time_of_day_order, ordered=True)
+            time_of_day_kpis_mean = time_of_day_kpis_mean.sort_values('時間帯')
+            
+            time_of_day_counts = df['時間帯'].value_counts().reindex(time_of_day_order, fill_value=0)
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                fig1 = go.Figure(go.Bar(x=time_of_day_kpis_mean['時間帯'], y=time_of_day_kpis_mean['獲得支援point'], text=time_of_day_counts.loc[time_of_day_kpis_mean['時間帯']], textposition='auto', marker_color='#1f77b4', name='獲得支援point'))
+                fig1.update_layout(title_text="獲得支援point", title_font_size=16, yaxis=dict(title="獲得支援point", title_font_size=14), font=dict(size=12), height=400, margin=dict(t=50, b=0, l=40, r=40))
+                st.plotly_chart(fig1, use_container_width=True)
+            with col2:
+                fig2 = go.Figure(go.Bar(x=time_of_day_kpis_mean['時間帯'], y=time_of_day_kpis_mean['合計視聴数'], text=time_of_day_counts.loc[time_of_day_kpis_mean['時間帯']], textposition='auto', marker_color='#ff7f0e', name='合計視聴数'))
+                fig2.update_layout(title_text="合計視聴数", title_font_size=16, yaxis=dict(title="合計視聴数", title_font_size=14), font=dict(size=12), height=400, margin=dict(t=50, b=0, l=40, r=40))
+                st.plotly_chart(fig2, use_container_width=True)
+            with col3:
+                fig3 = go.Figure(go.Bar(x=time_of_day_kpis_mean['時間帯'], y=time_of_day_kpis_mean['コメント数'], text=time_of_day_counts.loc[time_of_day_kpis_mean['時間帯']], textposition='auto', marker_color='#2ca02c', name='コメント数'))
+                fig3.update_layout(title_text="コメント数", title_font_size=16, yaxis=dict(title="コメント数", title_font_size=14), font=dict(size=12), height=400, margin=dict(t=50, b=0, l=40, r=40))
+                st.plotly_chart(fig3, use_container_width=True)
+
+            st.subheader("📊 時間帯別パフォーマンス分析 (中央値)")
+            st.info("※ このグラフは、各時間帯に配信した際の各KPIの**中央値**を示しています。突出した値の影響を受けにくく、一般的な傾向を把握するのに役立ちます。棒上の数字は、その時間帯の配信件数です。")
+            
+            time_of_day_kpis_median = df.groupby('時間帯').agg({'獲得支援point': 'median', '合計視聴数': 'median', 'コメント数': 'median'}).reset_index()
+            time_of_day_kpis_median['時間帯'] = pd.Categorical(time_of_day_kpis_median['時間帯'], categories=time_of_day_order, ordered=True)
+            time_of_day_kpis_median = time_of_day_kpis_median.sort_values('時間帯')
+            
+            col4, col5, col6 = st.columns(3)
+            
+            with col4:
+                fig4 = go.Figure(go.Bar(x=time_of_day_kpis_median['時間帯'], y=time_of_day_kpis_median['獲得支援point'], text=time_of_day_counts.loc[time_of_day_kpis_median['時間帯']], textposition='auto', marker_color='#1f77b4', name='獲得支援point'))
+                fig4.update_layout(title_text="獲得支援point (中央値)", title_font_size=16, yaxis=dict(title="獲得支援point", title_font_size=14), font=dict(size=12), height=400, margin=dict(t=50, b=0, l=40, r=40))
+                st.plotly_chart(fig4, use_container_width=True)
+            with col5:
+                fig5 = go.Figure(go.Bar(x=time_of_day_kpis_median['時間帯'], y=time_of_day_kpis_median['合計視聴数'], text=time_of_day_counts.loc[time_of_day_kpis_median['時間帯']], textposition='auto', marker_color='#ff7f0e', name='合計視聴数'))
+                fig5.update_layout(title_text="合計視聴数 (中央値)", title_font_size=16, yaxis=dict(title="合計視聴数", title_font_size=14), font=dict(size=12), height=400, margin=dict(t=50, b=0, l=40, r=40))
+                st.plotly_chart(fig5, use_container_width=True)
+            with col6:
+                fig6 = go.Figure(go.Bar(x=time_of_day_kpis_median['時間帯'], y=time_of_day_kpis_median['コメント数'], text=time_of_day_counts.loc[time_of_day_kpis_median['時間帯']], textposition='auto', marker_color='#2ca02c', name='コメント数'))
+                fig6.update_layout(title_text="コメント数 (中央値)", title_font_size=16, yaxis=dict(title="コメント数", title_font_size=14), font=dict(size=12), height=400, margin=dict(t=50, b=0, l=40, r=40))
+                st.plotly_chart(fig6, use_container_width=True)
+            
+        else: # 個別アカウントIDの場合
+            st.subheader("📈 主要KPIの推移")
+            df_sorted_asc = df.sort_values(by="配信日時", ascending=True).copy()
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=df_sorted_asc["配信日時"], y=df_sorted_asc["獲得支援point"], name="獲得支援point", mode='lines+markers', marker=dict(symbol='circle')))
+            fig.add_trace(go.Scatter(x=df_sorted_asc["配信日時"], y=df_sorted_asc["配信時間(分)"], name="配信時間(分)", mode='lines+markers', yaxis="y2", marker=dict(symbol='square')))
+            fig.add_trace(go.Scatter(x=df_sorted_asc["配信日時"], y=df_sorted_asc["合計視聴数"], name="合計視聴数", mode='lines+markers', yaxis="y2", marker=dict(symbol='star')))
+            fig.update_layout(title="KPIの推移（配信時間別）", xaxis=dict(title="配信日時"), yaxis=dict(title="獲得支援point", side="left", showgrid=False), yaxis2=dict(title="配信時間・視聴数", overlaying="y", side="right"), legend=dict(x=0, y=1.1, orientation="h"), hovermode="x unified")
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.subheader("📊 時間帯別パフォーマンス分析 (平均値)")
+            st.info("※ このグラフは、各時間帯に配信した際の各KPIの**平均値**を示しています。棒上の数字は、その時間帯の配信件数です。")
+            df['時間帯'] = df['配信日時'].dt.hour.apply(categorize_time_of_day_with_range)
+            time_of_day_kpis_mean = df.groupby('時間帯').agg({'獲得支援point': 'mean', '合計視聴数': 'mean', 'コメント数': 'mean'}).reset_index()
+            # 修正: '朝 (6-9時)' を含む完全なリストに統一
+            time_of_day_order = ["深夜 (0-3時)", "早朝 (3-6時)", "朝 (6-9時)", "午前 (9-12時)", "昼 (12-14時)", "昼跨ぎ (14-15時)", "午後 (15-18時)", "夜前半 (18-21時)", "夜ピーク (21-22時)", "夜後半 (22-24時)"]
+            time_of_day_kpis_mean['時間帯'] = pd.Categorical(time_of_day_kpis_mean['時間帯'], categories=time_of_day_order, ordered=True)
+            time_of_day_kpis_mean = time_of_day_kpis_mean.sort_values('時間帯')
+            time_of_day_counts = df['時間帯'].value_counts().reindex(time_of_day_order, fill_value=0)
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                fig1 = go.Figure(go.Bar(x=time_of_day_kpis_mean['時間帯'], y=time_of_day_kpis_mean['獲得支援point'], text=time_of_day_counts.loc[time_of_day_kpis_mean['時間帯']], textposition='auto', marker_color='#1f77b4', name='獲得支援point'))
+                fig1.update_layout(title_text="獲得支援point", title_font_size=16, yaxis=dict(title="獲得支援point", title_font_size=14), font=dict(size=12), height=400, margin=dict(t=50, b=0, l=40, r=40))
+                st.plotly_chart(fig1, use_container_width=True)
+            with col2:
+                fig2 = go.Figure(go.Bar(x=time_of_day_kpis_mean['時間帯'], y=time_of_day_kpis_mean['合計視聴数'], text=time_of_day_counts.loc[time_of_day_kpis_mean['時間帯']], textposition='auto', marker_color='#ff7f0e', name='合計視聴数'))
+                fig2.update_layout(title_text="合計視聴数", title_font_size=16, yaxis=dict(title="合計視聴数", title_font_size=14), font=dict(size=12), height=400, margin=dict(t=50, b=0, l=40, r=40))
+                st.plotly_chart(fig2, use_container_width=True)
+            with col3:
+                fig3 = go.Figure(go.Bar(x=time_of_day_kpis_mean['時間帯'], y=time_of_day_kpis_mean['コメント数'], text=time_of_day_counts.loc[time_of_day_kpis_mean['時間帯']], textposition='auto', marker_color='#2ca02c', name='コメント数'))
+                fig3.update_layout(title_text="コメント数", title_font_size=16, yaxis=dict(title="コメント数", title_font_size=14), font=dict(size=12), height=400, margin=dict(t=50, b=0, l=40, r=40))
+                st.plotly_chart(fig3, use_container_width=True)
+
+            st.subheader("📊 時間帯別パフォーマンス分析 (中央値)")
+            st.info("※ このグラフは、各時間帯に配信した際の各KPIの**中央値**を示しています。突出した値の影響を受けにくく、一般的な傾向を把握するのに役立ちます。棒上の数字は、その時間帯の配信件数です。")
+            time_of_day_kpis_median = df.groupby('時間帯').agg({'獲得支援point': 'median', '合計視聴数': 'median', 'コメント数': 'median'}).reset_index()
+            time_of_day_kpis_median['時間帯'] = pd.Categorical(time_of_day_kpis_median['時間帯'], categories=time_of_day_order, ordered=True)
+            time_of_day_kpis_median = time_of_day_kpis_median.sort_values('時間帯')
+            col4, col5, col6 = st.columns(3)
+            with col4:
+                fig4 = go.Figure(go.Bar(x=time_of_day_kpis_median['時間帯'], y=time_of_day_kpis_median['獲得支援point'], text=time_of_day_counts.loc[time_of_day_kpis_median['時間帯']], textposition='auto', marker_color='#1f77b4', name='獲得支援point'))
+                fig4.update_layout(title_text="獲得支援point (中央値)", title_font_size=16, yaxis=dict(title="獲得支援point", title_font_size=14), font=dict(size=12), height=400, margin=dict(t=50, b=0, l=40, r=40))
+                st.plotly_chart(fig4, use_container_width=True)
+            with col5:
+                fig5 = go.Figure(go.Bar(x=time_of_day_kpis_median['時間帯'], y=time_of_day_kpis_median['合計視聴数'], text=time_of_day_counts.loc[time_of_day_kpis_median['時間帯']], textposition='auto', marker_color='#ff7f0e', name='合計視聴数'))
+                fig5.update_layout(title_text="合計視聴数 (中央値)", title_font_size=16, yaxis=dict(title="合計視聴数", title_font_size=14), font=dict(size=12), height=400, margin=dict(t=50, b=0, l=40, r=40))
+                st.plotly_chart(fig5, use_container_width=True)
+            with col6:
+                fig6 = go.Figure(go.Bar(x=time_of_day_kpis_median['時間帯'], y=time_of_day_kpis_median['コメント数'], text=time_of_day_counts.loc[time_of_day_kpis_median['時間帯']], textposition='auto', marker_color='#2ca02c', name='コメント数'))
+                fig6.update_layout(title_text="コメント数 (中央値)", title_font_size=16, yaxis=dict(title="コメント数", title_font_size=14), font=dict(size=12), height=400, margin=dict(t=50, b=0, l=40, r=40))
+                st.plotly_chart(fig6, use_container_width=True)
+            
+            st.subheader("📝 配信ごとの詳細データ")
+            st.markdown(f"**▶ [各項目について](https://mksoul-pro.com/showroom/repo_koumoku)**", unsafe_allow_html=True)
+            #st.link_button(
+            #    label="▶ 各項目について",  # ボタンに表示されるテキスト
+            #    url="https://mksoul-pro.com/showroom/repo_koumoku" # 遷移先のURL
+            #)
+            df_display = df.sort_values(by="配信日時", ascending=False).copy()
+            # --- ここから修正（最小変更） ---
+            event_df_master = fetch_event_data()
+
+            # ① 列順を壊さないために「時間帯」列を先に作成しておく（存在しなければ追加）
+            if '時間帯' not in df_display.columns:
+                df_display['時間帯'] = df_display['配信日時'].dt.hour.apply(categorize_time_of_day_with_range)
+
+            # ② イベント名マージ（既存の関数を利用）
+            df_display = merge_event_data(df_display, event_df_master)
+
+            # ③ 「イベントで指定」モードかつ選択イベントがあれば、**選択イベント名だけを抽出**
+            #    （これが今回の要求：選択イベント以外は表示しない）
+            if st.session_state.get('analysis_type_selector') == 'イベントで指定':
+                # 選択イベントが selectbox で入っている変数名が selected_event_val の場合（UI側で同名を使っている想定）
+                selected_ev = selected_event_val if 'selected_event_val' in locals() else None
+                # もしセッションに保持されているならそれを優先
+                if not selected_ev:
+                    selected_ev = st.session_state.get('selected_event_val', None)
+                if selected_ev:
+                    df_display = df_display[df_display['イベント名'] == selected_ev].copy()
+            # --- ここまで修正 ---
+            
+            # 修正: ルーム名列を追加
+            if 'ルーム名' not in df_display.columns:
+                 df_display['ルーム名'] = ''
+            df_display['ルーム名'] = room_name
+
+            # ③ 時刻のフォーマットを変更
+            df_display_formatted = df_display.copy()
+            df_display_formatted['配信日時'] = df_display_formatted['配信日時'].dt.strftime('%Y-%m-%d %H:%M')
+            st.dataframe(df_display_formatted, hide_index=True)
+            
+            st.subheader("📝 全体サマリー")
+            total_support_points = int(df_display["獲得支援point"].sum())
+            if "フォロワー数" in df_display.columns and not df_display.empty:
+                df_sorted_by_date = df_display.sort_values(by="配信日時")
+                if not df_sorted_by_date.empty:
+                    final_followers = int(df_sorted_by_date["フォロワー数"].iloc[-1])
+                    initial_followers = int(df_sorted_by_date["フォロワー数"].iloc[0])
+                    total_follower_increase = final_followers - initial_followers
+                    st.markdown(f"**フォロワー純増数:** {total_follower_increase:,} 人")
+                    st.markdown(f"**最終フォロワー数:** {final_followers:,} 人")
+            st.markdown(f"**合計獲得支援ポイント:** {total_support_points:,} pt")
+
+            st.subheader("📊 その他数値分析")
+            row1_col1, row1_col2, row1_col3 = st.columns(3)
+            row2_col1, row2_col2, row2_col3 = st.columns(3)
+            metric_html_style = """<style>.stMetric-container{background-color:transparent;border:none;padding-bottom:20px;}.metric-label{font-size:16px;font-weight:600;color:#000;margin-bottom:-5px;}.metric-value{font-size:32px;font-weight:700;color:#1f77b4;}.metric-caption{font-size:12px;color:#a0a0a0;margin-top:-5px;}.metric-help{font-size:12px;color:#808080;margin-top:10px;line-height:1.5}</style>"""
+            st.markdown(metric_html_style, unsafe_allow_html=True)
+            with row1_col1:
+                first_time_df = df_display.dropna(subset=['初ルーム来訪者数', '合計視聴数'])
+                total_members_for_first_time = first_time_df["合計視聴数"].sum()
+                first_time_visitors = first_time_df["初ルーム来訪者数"].sum()
+                first_time_rate = f"{(first_time_visitors / total_members_for_first_time * 100):.1f}%" if total_members_for_first_time > 0 else "0%"
+                metric_html = f"""<div class="stMetric-container"><div class="metric-label">初見訪問者率</div><div class="metric-value">{first_time_rate}</div><div class="metric-caption">（MK平均値：{st.session_state.get('mk_avg_rate_visit', 0):.1f}% / MK中央値：{st.session_state.get('mk_median_rate_visit', 0):.1f}%）</div><div class="metric-help">合計視聴数に対する初ルーム来訪者数の割合です。</div></div>"""
+                st.markdown(metric_html, unsafe_allow_html=True)
+            with row1_col2:
+                comment_df = df_display.dropna(subset=['初コメント人数', 'コメント人数'])
+                total_commenters = comment_df["コメント人数"].sum()
+                first_time_commenters = comment_df["初コメント人数"].sum()
+                first_comment_rate = f"{(first_time_commenters / total_commenters * 100):.1f}%" if total_commenters > 0 else "0%"
+                metric_html = f"""<div class="stMetric-container"><div class="metric-label">初コメント率</div><div class="metric-value">{first_comment_rate}</div><div class="metric-caption">（MK平均値：{st.session_state.get('mk_avg_rate_comment', 0):.1f}% / MK中央値：{st.session_state.get('mk_median_rate_comment', 0):.1f}%）</div><div class="metric-help">合計コメント人数に対する初コメント会員数の割合です。</div></div>"""
+                st.markdown(metric_html, unsafe_allow_html=True)
+            with row1_col3:
+                gift_df = df_display.dropna(subset=['初ギフト人数', 'ギフト人数'])
+                total_gifters = gift_df["ギフト人数"].sum()
+                first_time_gifters = gift_df["初ギフト人数"].sum()
+                first_gift_rate = f"{(first_time_gifters / total_gifters * 100):.1f}%" if total_gifters > 0 else "0%"
+                metric_html = f"""<div class="stMetric-container"><div class="metric-label">初ギフト率</div><div class="metric-value">{first_gift_rate}</div><div class="metric-caption">（MK平均値：{st.session_state.get('mk_avg_rate_gift', 0):.1f}% / MK中央値：{st.session_state.get('mk_median_rate_gift', 0):.1f}%）</div><div class="metric-help">合計ギフト会員数に対する初ギフト会員数の割合です。</div></div>"""
+                st.markdown(metric_html, unsafe_allow_html=True)
+            with row2_col1:
+                short_stay_df = df_display.dropna(subset=['短時間滞在者数', '視聴会員数'])
+                total_viewers_for_short_stay = short_stay_df["視聴会員数"].sum()
+                short_stay_visitors = short_stay_df["短時間滞在者数"].sum()
+                short_stay_rate = f"{(short_stay_visitors / total_viewers_for_short_stay * 100):.1f}%" if total_viewers_for_short_stay > 0 else "0%"
+                metric_html = f"""<div class="stMetric-container"><div class="metric-label">短時間滞在者率</div><div class="metric-value">{short_stay_rate}</div><div class="metric-caption">（MK平均値：{st.session_state.get('mk_avg_rate_short_stay', 0):.1f}% / MK中央値：{st.session_state.get('mk_median_rate_short_stay', 0):.1f}%）</div><div class="metric-help">視聴会員数に対する滞在時間が1分未満の会員数の割合です。</div></div>"""
+                st.markdown(metric_html, unsafe_allow_html=True)
+            with row2_col2:
+                sg_gift_df = df_display.dropna(subset=['期限あり/期限なしSGのギフティング数', 'ギフト数'])
+                total_gifts = sg_gift_df["ギフト数"].sum()
+                total_sg_gifts = sg_gift_df["期限あり/期限なしSGのギフティング数"].sum()
+                sg_gift_rate = f"{(total_sg_gifts / total_gifts * 100):.1f}%" if total_gifts > 0 else "0%"
+                metric_html = f"""<div class="stMetric-container"><div class="metric-label">SGギフト数率</div><div class="metric-value">{sg_gift_rate}</div><div class="metric-caption">（MK平均値：{st.session_state.get('mk_avg_rate_sg_gift', 0):.1f}% / MK中央値：{st.session_state.get('mk_median_rate_sg_gift', 0):.1f}%）</div><div class="metric-help">ギフト総数に対するSGギフト数の割合です。</div></div>"""
+                st.markdown(metric_html, unsafe_allow_html=True)
+            with row2_col3:
+                sg_person_df = df_display.dropna(subset=['期限あり/期限なしSGのギフティング人数', 'ギフト人数'])
+                total_gifters = sg_person_df["ギフト人数"].sum()
+                total_sg_gifters = sg_person_df["期限あり/期限なしSGのギフティング人数"].sum()
+                sg_person_rate = f"{(total_sg_gifters / total_gifters * 100):.1f}%" if total_gifters > 0 else "0%"
+                metric_html = f"""<div class="stMetric-container"><div class="metric-label">SGギフト人数率</div><div class="metric-value">{sg_person_rate}</div><div class="metric-caption">（MK平均値：{st.session_state.get('mk_avg_rate_sg_person', 0):.1f}% / MK中央値：{st.session_state.get('mk_median_rate_sg_person', 0):.1f}%）</div><div class="metric-help">ギフト人数総数に対するSGギフト人数の割合です。</div></div>"""
+                st.markdown(metric_html, unsafe_allow_html=True)
+
+            st.markdown("<hr>", unsafe_allow_html=True)
+
+            st.subheader("🎯 ヒット配信")
+            st.info("特定の条件を満たしたパフォーマンスの高い配信をピックアップしています。")
+
+            avg_support_points = df_display["獲得支援point"].mean()
+            avg_sg_total = df_display["期限あり/期限なしSG総額"].mean()
+            avg_sg_gifters = df_display["期限あり/期限なしSGのギフティング人数"].mean()
+            avg_gifters = df_display["ギフト人数"].mean()
+            avg_commenters = df_display["コメント人数"].mean()
+
+            hit_broadcasts = []
+            for index, row in df_display.iterrows():
+                hit_items = []
+                # ① 初見訪問者率
+                if pd.notna(row['初ルーム来訪者数']) and row['合計視聴数'] > 0:
+                    rate = (row['初ルーム来訪者数'] / row['合計視聴数']) * 100
+                    mk_avg_rate_visit = st.session_state.get('mk_avg_rate_visit', 0)
+                    if rate >= mk_avg_rate_visit * 2.2:
+                        hit_items.append('初見訪問者率')
+                # ② 初コメント率
+                if pd.notna(row['初コメント人数']) and row['コメント人数'] > 0:
+                    rate = (row['初コメント人数'] / row['コメント人数']) * 100
+                    mk_avg_rate_comment = st.session_state.get('mk_avg_rate_comment', 0)
+                    if rate >= mk_avg_rate_comment * 2.2:
+                        hit_items.append('初コメント率')
+                # ③ 初ギフト率
+                if pd.notna(row['初ギフト人数']) and row['ギフト人数'] > 0:
+                    rate = (row['初ギフト人数'] / row['ギフト人数']) * 100
+                    mk_avg_rate_gift = st.session_state.get('mk_avg_rate_gift', 0)
+                    if rate >= mk_avg_rate_gift * 2.2:
+                        hit_items.append('初ギフト率')
+                # ④ 短時間滞在者率
+                if pd.notna(row['短時間滞在者数']) and row['視聴会員数'] > 0:
+                    rate = (row['短時間滞在者数'] / row['視聴会員数']) * 100
+                    mk_avg_rate_short_stay = st.session_state.get('mk_avg_rate_short_stay', 0)
+                    if rate <= mk_avg_rate_short_stay * 0.4:
+                        hit_items.append('短時間滞在者率')
+                # ⑤ 獲得支援point
+                if pd.notna(row['獲得支援point']) and row['獲得支援point'] >= avg_support_points * 2.7: hit_items.append('獲得支援point')
+                # ⑥ SG総額
+                if pd.notna(row['期限あり/期限なしSG総額']) and row['期限あり/期限なしSG総額'] >= avg_sg_total * 2.7: hit_items.append('SG総額')
+                # ⑦ SGギフト人数
+                if pd.notna(row['期限あり/期限なしSGのギフティング人数']) and row['期限あり/期限なしSGのギフティング人数'] >= avg_sg_gifters * 2.2: hit_items.append('SGギフト人数')
+                # ⑧ ギフト人数
+                if pd.notna(row['ギフト人数']) and row['ギフト人数'] >= avg_gifters * 2.2: hit_items.append('ギフト人数')
+                # ⑨ コメント人数
+                if pd.notna(row['コメント人数']) and row['コメント人数'] >= avg_commenters * 2.2: hit_items.append('コメント人数')
+                if hit_items:
+                    hit_broadcasts.append({'配信日時': row['配信日時'], 'ヒット項目': ', '.join(hit_items), 'イベント名': row['イベント名']})
+            if hit_broadcasts:
+                hit_df = pd.DataFrame(hit_broadcasts)
+                hit_df['配信日時'] = pd.to_datetime(hit_df['配信日時']).dt.strftime('%Y-%m-%d %H:%M')
+                st.dataframe(hit_df, hide_index=True)
+            else:
+                st.info("条件を満たす「ヒット配信」は見つかりませんでした。")
