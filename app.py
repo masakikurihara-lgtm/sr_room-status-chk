@@ -264,12 +264,64 @@ def display_room_status(profile_data, input_room_id):
         font-weight: bold;
     }
     
-    /* ⭐ テーブルコンテナに横スクロールを適用 */
-    /* Streamlitのコンテナ要素を特定し、横スクロールを有効にする */
-    .stExpander div[data-testid="stExpanderContents"] > div:last-child {
-        overflow-x: auto; /* テーブルがはみ出す場合に横スクロールを有効化 */
+    /* ⭐ テーブルコンテナに横スクロールを適用 (前回の不確実なセレクタを削除) */
+    /* 代わりに、HTMLテーブルをラップする div にインラインで overflow-x: auto を適用します。 */
+    
+    /* HTMLテーブルのスタイルをここで定義しておき、後でテーブルのHTMLに適用 */
+    /* StreamlitのHTMLレンダリング領域内 (stHtml) の DataFrame スタイル */
+    .stHtml .dataframe {
+        width: 100%; /* PCで幅を最大限に活用 */
+        min-width: 900px; /* スマホで横スクロールを発生させるための最小幅を拡大 */
+        border-collapse: collapse;
+    }
+    .stHtml .dataframe th {
+        background-color: #e8eaf6; 
+        color: #1a237e; 
+        font-weight: bold;
+        padding: 8px 10px; 
+        font-size: 14px;
+        text-align: left;
+        border-bottom: 2px solid #c5cae9; 
+        white-space: nowrap;
+    }
+    .stHtml .dataframe td {
+        padding: 6px 10px; 
+        font-size: 13px; 
+        line-height: 1.4;
+        border-bottom: 1px solid #f0f0f0;
+        white-space: nowrap; 
+    }
+    .stHtml .dataframe tbody tr:hover {
+        background-color: #f7f9fd; 
     }
 
+    /* 列ごとの配置調整 */
+    /* 数値系の列をすべて右寄せに統一 */
+    .stHtml .dataframe th:nth-child(2), .stHtml .dataframe td:nth-child(2), /* Lv */
+    .stHtml .dataframe th:nth-child(4), .stHtml .dataframe td:nth-child(4), /* フォロワー数 */
+    .stHtml .dataframe th:nth-child(5), .stHtml .dataframe td:nth-child(5), /* まいにち配信 */
+    .stHtml .dataframe th:nth-child(7), .stHtml .dataframe td:nth-child(7), /* 順位 */
+    .stHtml .dataframe th:nth-child(8), .stHtml .dataframe td:nth-child(8) { /* ポイント */
+        text-align: right !important; 
+        width: 10%;
+    }
+    /* ランクを中央寄せ */
+    .stHtml .dataframe th:nth-child(3), .stHtml .dataframe td:nth-child(3) { 
+        text-align: center !important; 
+        width: 8%;
+    }
+    /* 公/フを中央寄せ */
+    .stHtml .dataframe th:nth-child(6), .stHtml .dataframe td:nth-child(6) { 
+        text-align: center !important; 
+        font-weight: bold;
+        color: inherit; 
+        width: 5%;
+    }
+    /* ルーム名のセル幅を柔軟に */
+    .stHtml .dataframe th:nth-child(1), .stHtml .dataframe td:nth-child(1) {
+        min-width: 250px; /* ルーム名に確保する最小幅を拡大 */
+        white-space: normal !important; 
+    }
     </style>
     """
     st.markdown(custom_styles, unsafe_allow_html=True)
@@ -478,69 +530,6 @@ def display_room_status(profile_data, input_room_id):
 
             # コンパクトに expander 内で表示
             with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
-                # 見栄え改善のためのカスタムCSS (テーブル用)
-                table_style_inner = """
-                <style>
-                /* テーブル全体のスタイル */
-                .stHtml .dataframe {
-                    width: 100%; /* PCで幅を最大限に活用 */
-                    min-width: 700px; /* スマホで横スクロールを発生させるための最小幅 */
-                    border-collapse: collapse;
-                }
-                /* ヘッダーのスタイル */
-                .stHtml .dataframe th {
-                    background-color: #e8eaf6; 
-                    color: #1a237e; 
-                    font-weight: bold;
-                    padding: 8px 10px; 
-                    font-size: 14px;
-                    text-align: left;
-                    border-bottom: 2px solid #c5cae9; 
-                    white-space: nowrap;
-                }
-                /* セルのスタイル */
-                .stHtml .dataframe td {
-                    padding: 6px 10px; 
-                    font-size: 13px; 
-                    line-height: 1.4;
-                    border-bottom: 1px solid #f0f0f0;
-                    white-space: nowrap; 
-                }
-                /* 行のホバー効果 */
-                .stHtml .dataframe tbody tr:hover {
-                    background-color: #f7f9fd; 
-                }
-
-                /* 列ごとの配置調整 */
-                /* ポイント列を右寄せ */
-                .stHtml .dataframe th:nth-child(8), 
-                .stHtml .dataframe td:nth-child(8) {
-                    text-align: right !important; 
-                    font-weight: bold;
-                    width: 15%; /* ポイント列に少し多めの幅を与える */
-                }
-                /* Lv, フォロワー数, まいにち配信, 順位を右寄せに統一（数値の桁揃えのため） */
-                .stHtml .dataframe th:nth-child(2), .stHtml .dataframe td:nth-child(2), /* Lv */
-                .stHtml .dataframe th:nth-child(4), .stHtml .dataframe td:nth-child(4), /* フォロワー数 */
-                .stHtml .dataframe th:nth-child(5), .stHtml .dataframe td:nth-child(5), /* まいにち配信 */
-                .stHtml .dataframe th:nth-child(7), .stHtml .dataframe td:nth-child(7) { /* 順位 */
-                    text-align: right !important; 
-                    width: 10%;
-                }
-                /* ランクと公/フを中央寄せ */
-                .stHtml .dataframe th:nth-child(3), .stHtml .dataframe td:nth-child(3), /* ランク */
-                .stHtml .dataframe th:nth-child(6), .stHtml .dataframe td:nth-child(6) { /* 公/フ */
-                    text-align: center !important; 
-                    width: 8%;
-                }
-
-                /* ルーム名のセル幅を柔軟に */
-                .stHtml .dataframe th:nth-child(1), .stHtml .dataframe td:nth-child(1) {
-                    min-width: 200px; /* ルーム名に確保する最小幅 */
-                    white-space: normal !important; 
-                }
-                </style>
-                """
                 
                 # to_htmlでHTMLタグが混入したルーム名列を正しくエスケープせずに表示させる
                 html_table = dfp_display.to_html(
@@ -554,11 +543,12 @@ def display_room_status(profile_data, input_room_id):
                 html_table = html_table.replace('\n', '')
                 html_table = re.sub(r'>\s+<', '><', html_table)
 
+                # ⭐ HTMLテーブル全体を div でラップし、インラインで横スクロールを強制適用
+                # これにより、Streamlitの内部コンテナ構造に依存せず、スマホで横スクロールが可能になります。
+                html_container = f'<div style="overflow-x: auto; padding-bottom: 10px;">{html_table}</div>'
+
                 # カスタムCSSとHTMLテーブルを一緒に表示
-                # 注意: st.expander内のmarkdownのスタイルは、Streamlitの内部構造によって適用範囲が限られます。
-                # 外側の custom_styles で .stExpander div[data-testid="stExpanderContents"] > div:last-child { overflow-x: auto; }
-                # を適用しているため、これで横スクロールが有効になるはずです。
-                st.markdown(table_style_inner + html_table, unsafe_allow_html=True)
+                st.markdown(html_container, unsafe_allow_html=True)
         else:
             st.info("参加ルーム情報が取得できませんでした（ランキングイベントではない、またはデータがまだありません）。")
 
