@@ -288,7 +288,7 @@ def display_room_status(profile_data, input_room_id):
     room_url = f"https://www.showroom-live.com/room/profile?room_id={input_room_id}"
     
     
-    # --- 💡 カスタムCSSの定義（中央寄せを強化） ---
+    # --- 💡 カスタムCSSの定義（中央寄せを再強化） ---
     custom_styles = """
     <style>
     /* 全体のフォント統一と余白調整 */
@@ -375,17 +375,14 @@ def display_room_status(profile_data, input_room_id):
     }
 
     /*
-    🔥🔥 最強の修正: すべての th と td の text-align を強制的に center に設定
-    PandasやStreamlitがインラインスタイルを適用した場合でも、この!importantで上書きします。
+    🔥🔥 最終強制修正: すべての th と td の text-align をセンターに設定し、優先度を最大化
+    StreamlitがHTMLをMarkdownで出力するときに適用する可能性のある
+    .stMarkdown要素の下にあるtable.dataframeをターゲットにします。
     */
-    .stHtml table.dataframe th, 
-    .stHtml table.dataframe td {
-        text-align: center !important; 
-        /* !importantの優先度を上げるため、セレクタもtable.dataframeで指定 */
-    }
     
-    /* ヘッダーセルの共通スタイル */
-    .stHtml .dataframe th {
+    /* ヘッダーセル (<th>) を強制的に中央寄せ */
+    .stMarkdown table.dataframe th {
+        text-align: center !important; 
         background-color: #e8eaf6; 
         color: #1a237e; 
         font-weight: bold;
@@ -395,48 +392,53 @@ def display_room_status(profile_data, input_room_id):
         white-space: nowrap;
     }
     
-    /* データセルの共通スタイル */
-    .stHtml .dataframe td {
+    /* データセル (<td>) を強制的に中央寄せ */
+    .stMarkdown table.dataframe td {
+        text-align: center !important; 
         padding: 6px 10px; 
         font-size: 13px; 
         line-height: 1.4;
         border-bottom: 1px solid #f0f0f0;
         white-space: nowrap; 
     }
-    .stHtml .dataframe tbody tr:hover {
-        background-color: #f7f9fd; 
-    }
-
-    /* 列ごとの幅とホワイトスペースの調整 */
     
-    /* 1. ルーム名: 中央寄せ、幅広 */
-    .stHtml .dataframe th:nth-child(1), .stHtml .dataframe td:nth-child(1) {
+    /* ルーム名列のデータセル (<td>) のみ、テキストを左寄せに戻す（自然な表示のため） */
+    /* 1列目 (ルーム名) のセルをターゲット */
+    .stMarkdown table.dataframe td:nth-child(1) {
+        text-align: left !important; /* ルーム名のみ左寄せに戻す */
         min-width: 280px; 
         white-space: normal !important; 
     }
-    
-    /* 数値系の列を中央寄せに統一（幅指定） */
-    .stHtml .dataframe th:nth-child(2), .stHtml .dataframe td:nth-child(2), /* ルームレベル */
-    .stHtml .dataframe th:nth-child(4), .stHtml .dataframe td:nth-child(4), /* フォロワー数 */
-    .stHtml .dataframe th:nth-child(5), .stHtml .dataframe td:nth-child(5), /* まいにち配信 */
-    .stHtml .dataframe th:nth-child(9), .stHtml .dataframe td:nth-child(9) { /* ポイント */
+
+    /* ルーム名列のヘッダーセル (<th>) は中央寄せを維持 */
+    .stMarkdown table.dataframe th:nth-child(1) {
+        text-align: center !important; 
+        min-width: 280px; 
+        white-space: normal !important; 
+    }
+
+    /* 2列目以降の幅調整（中央寄せはそのまま） */
+    .stMarkdown table.dataframe th:nth-child(2), .stMarkdown table.dataframe td:nth-child(2), /* ルームレベル */
+    .stMarkdown table.dataframe th:nth-child(4), .stMarkdown table.dataframe td:nth-child(4), /* フォロワー数 */
+    .stMarkdown table.dataframe th:nth-child(5), .stMarkdown table.dataframe td:nth-child(5), /* まいにち配信 */
+    .stMarkdown table.dataframe th:nth-child(9), .stMarkdown table.dataframe td:nth-child(9) { /* ポイント */
         width: 10%; 
     }
 
     /* 中央寄せを維持しつつ幅調整 (ランク、公式 or フリー、ルームID、順位、レベル) */
-    .stHtml .dataframe th:nth-child(3), .stHtml .dataframe td:nth-child(3), /* ランク */
-    .stHtml .dataframe th:nth-child(6), .stHtml .dataframe td:nth-child(6), /* 公式 or フリー */
-    .stHtml .dataframe th:nth-child(7), .stHtml .dataframe td:nth-child(7), /* ルームID */
-    .stHtml .dataframe th:nth-child(8), .stHtml .dataframe td:nth-child(8), /* 順位 */
-    .stHtml .dataframe th:nth-child(10), .stHtml .dataframe td:nth-child(10) { /* レベル (最終列) */
+    .stMarkdown table.dataframe th:nth-child(3), .stMarkdown table.dataframe td:nth-child(3), /* ランク */
+    .stMarkdown table.dataframe th:nth-child(6), .stMarkdown table.dataframe td:nth-child(6), /* 公式 or フリー */
+    .stMarkdown table.dataframe th:nth-child(7), .stMarkdown table.dataframe td:nth-child(7), /* ルームID */
+    .stMarkdown table.dataframe th:nth-child(8), .stMarkdown table.dataframe td:nth-child(8), /* 順位 */
+    .stMarkdown table.dataframe th:nth-child(10), .stMarkdown table.dataframe td:nth-child(10) { /* レベル (最終列) */
         width: 8%;
     }
     
-    /* '公式 or フリー' の強調 */
-    .stHtml .dataframe th:nth-child(6), .stHtml .dataframe td:nth-child(6) {
-        font-weight: bold;
+    /* ホバーエフェクトの維持 */
+    .stMarkdown table.dataframe tbody tr:hover {
+        background-color: #f7f9fd; 
     }
-    
+
     </style>
     """
     st.markdown(custom_styles, unsafe_allow_html=True)
@@ -693,6 +695,7 @@ def display_room_status(profile_data, input_room_id):
                 
                 # ルームIDがハイフンでない、つまり有効な値の場合のみリンクを生成
                 if rid != '-':
+                    # HTMLタグのインラインスタイルでtext-alignをリセットする試みは無効化し、CSSに任せる
                     return f'<a href="https://www.showroom-live.com/room/profile?room_id={rid}" target="_blank">{name}</a>'
                 return name
 
@@ -708,8 +711,6 @@ def display_room_status(profile_data, input_room_id):
             # コンパクトに expander 内で表示
             with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
                 
-                # 【🔥🔥🔥 修正済み 🔥🔥🔥】
-                # Pandasの表示オプション操作（エラーの原因）を削除し、直接HTMLを生成します。
                 html_table = dfp_display.to_html(
                     escape=False, 
                     index=False, 
