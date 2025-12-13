@@ -375,7 +375,6 @@ def display_room_status(profile_data, input_room_id):
         justify-content: center; 
         width: 100%;
         overflow-x: auto;
-        /* text-align: center は th や td ではなく、テーブル全体の子要素に影響するため削除 */
     }
 
     /* 🔥 最終調整: すべての th と td の text-align を強制的に center に設定 */
@@ -709,18 +708,11 @@ def display_room_status(profile_data, input_room_id):
             # コンパクトに expander 内で表示
             with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
                 
-                # --- 🔥 修正 3: PandasのHTML出力設定を上書き ---
-                # Pandasの数値列に対するデフォルトの右寄せを中央寄せに変更
-                # **注意: これを適用すると、すべてのPandas DataFrameに影響する可能性があります。**
-                # ユーザーの環境によっては、Streamlitのキャッシュによって効果が出ない場合がありますが、適用します。
-                
-                # `set_option`は環境に影響を与えるため、表示直前に実行し、 Streamlit の制限でうまく動作しない場合はCSSに頼ります。
-                pd.set_option('styler.format.text_align', 'center')
+                # Pandasのオプション設定は削除済み
                 
                 html_table = dfp_display.to_html(
                     escape=False, 
                     index=False, 
-                    # justify='center' を明示的に指定しないことで、外部CSSの制御を優先させます。
                     classes='dataframe data-table data-table-full-width' 
                 )
                 
@@ -734,9 +726,6 @@ def display_room_status(profile_data, input_room_id):
                 # HTMLテーブルを直接 st.markdown で出力
                 st.markdown(centered_html, unsafe_allow_html=True)
                 
-                # 使用後に設定をリセット（通常は不要ですが、念のため）
-                # pd.reset_option('styler.format.text_align')
-
         else:
             st.info("参加ルーム情報が取得できませんでした（ランキングイベントではない、またはデータがまだありません）。")
 
