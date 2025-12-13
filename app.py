@@ -290,7 +290,7 @@ def display_room_status(profile_data, input_room_id):
     room_url = f"https://www.showroom-live.com/room/profile?room_id={input_room_id}"
     
     
-    # --- 💡 カスタムCSSの定義 ---
+    # --- 💡 カスタムCSSの定義（中央寄せを強化） ---
     custom_styles = """
     <style>
     /* 全体のフォント統一と余白調整 */
@@ -362,7 +362,7 @@ def display_room_status(profile_data, input_room_id):
     /* HTMLテーブルのスタイル */
     .stHtml .dataframe {
         border-collapse: collapse;
-        text-align: center; /* HTML側からの影響を打ち消すため、ここで center を指定 */
+        text-align: center; /* 念のため残す */
         margin-top: 10px; 
         width: 100%; 
         max-width: 1000px; 
@@ -377,11 +377,23 @@ def display_room_status(profile_data, input_room_id):
         overflow-x: auto;
     }
 
-    /* 🔥 最終調整: すべての th と td の text-align を強制的に center に設定 */
-    /* Streamlit/Pandasがインラインで right を適用した場合に上書きするために !important を使用 */
+    /*
+    🔥 最終強化: すべての th と td の text-align を強制的に center に設定
+    Pandas/Streamlitがインラインで 'text-align: right;' や 'text-align: left;' を適用している場合、
+    この !important で上書きします。
+    */
     .stHtml .dataframe th, 
     .stHtml .dataframe td {
         text-align: center !important; 
+    }
+    
+    /* ルーム名セル (1列目) のリンクを含むコンテンツを中央寄せにするための追加ルール */
+    /* td要素が text-align: center でも、内部の a 要素がインライン要素のため中央に配置されないことがあるため、
+       td要素全体を中央寄せにし、かつその内容が中央に配置されるようにする */
+    .stHtml .dataframe td:nth-child(1) {
+        text-align: center !important; 
+        /* 内部のリンクも中央に配置されるように display を調整する必要がある場合がありますが、
+           tdにtext-align: center !important; があれば、通常はコンテンツ全体が中央に配置されます。 */
     }
     
     /* ヘッダーセルの共通スタイル */
