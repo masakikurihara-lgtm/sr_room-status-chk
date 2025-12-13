@@ -8,7 +8,7 @@ import numpy as np
 
 # Streamlit の初期設定
 # 環境依存のエラー (StreamlitInvalidPageLayoutError) を避けるため、
-# set_page_configの引数を最小限にしました。レイアウトはデフォルト（縦型向き）になります。
+# set_page_configの引数を最小限にしました。（前回修正から変更なし）
 st.set_page_config(
     page_title="SHOWROOM ルームステータス可視化ツール"
 )
@@ -65,32 +65,28 @@ def get_room_profile(room_id):
 def get_event_participants_info(event_id, target_room_id, limit=10):
     """
     イベント参加ルーム情報・状況APIから必要な情報を抽出する。
-    イベントIDが存在すれば、開催状況に関わらずAPIを叩く。
-    無駄な全件取得は行わず、最大2ページ目まで確認する。
+    ターゲットルームが見つかるまでページングを試行するロジックに修正。
     """
     if not event_id:
-        # イベントに参加していない場合はすぐに終了
         return {"total_entries": "-", "rank": "-", "point": "-", "level": "-", "top_participants": []}
 
     participants_data = []
     page = 1
     total_entries = 0
     current_room_data = None
-    
-    # 1ページ目（ランキング情報と上位ルーム）と、自身が2ページ目にいる可能性を考慮し、最大2ページ目まで確認
-    while page <= 2: 
+    max_pages_to_check = 10 # 過剰なリクエストを避けるための安全な上限
+
+    # ターゲットルームが見つかるか、ページが尽きるまでループを継続
+    while current_room_data is None and page <= max_pages_to_check: 
         url = EVENT_ROOM_LIST_API.format(event_id=event_id, page=page)
         try:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             data = response.json()
 
-            if "room_list" not in data or not data["room_list"]:
-                 if page == 1:
-                     # 1ページ目でデータがない場合は、ランキングイベントではないか、データがまだない
-                     break
-                 else:
-                     break
+            # APIレスポンスに 'room_list' がない、またはリストが空の場合
+            if "room_list" not in data or not isinstance(data["room_list"], list) or not data["room_list"]:
+                break
             
             # total_entriesは1ページ目で取得
             if page == 1:
@@ -101,24 +97,27 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
                 if str(room.get("room_id")) == str(target_room_id):
                     current_room_data = room
             
-            # 1ページ目で上位10ルームの候補を取得
+            # 1ページ目のデータは常に上位10ルームの候補として保持
             if page == 1:
                 participants_data.extend(data["room_list"])
             
-            # ターゲットルームが既に見つかっていれば、これ以上のページ取得は不要
-            if current_room_data:
-                break
-            
             # 次のページに進む判定
+            # next_pageがnullでないか、total_entriesからまだページがあると推測できる場合
+            # ただし、確実なのは next_page キーの存在確認だが、StreamlitのAPIは単純なページ遷移しか提供しないことが多い
+            # ここではAPIの next_page キーに頼る
             if data.get("next_page") is not None:
                 page += 1
             else:
-                break
+                break # 次のページへのリンクがない場合は終了
 
         except requests.exceptions.RequestException:
+            # API呼び出しでエラーが発生した場合
+            break
+        except Exception:
+            # その他の予期せぬエラー (JSONデコード失敗など)
             break
 
-    # ターゲットルームの情報を設定
+    # ターゲットルームの情報を設定 (APIからNoneが返された場合に"-"を確実に設定)
     rank = _safe_get(current_room_data, ["rank"], "-")
     point = _safe_get(current_room_data, ["point"], "-")
     level = _safe_get(current_room_data, ["quest_level"], "-")
@@ -126,15 +125,15 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     # 上位10ルームをポイント順にソートして抽出
     top_participants = participants_data
     if top_participants:
-        # ポイントでソート
-        top_participants.sort(key=lambda x: x.get('point', 0), reverse=True)
+        # ポイントでソート (pointがない/None/無効な値の場合は0として扱う)
+        # int()での型変換が失敗しないよう、より安全に処理
+        top_participants.sort(key=lambda x: int(str(x.get('point', 0) or 0)), reverse=True)
     
     # 上限10ルームに制限
     top_participants = top_participants[:limit]
 
 
     return {
-        # データがない場合は「-」を設定
         "total_entries": total_entries if total_entries > 0 else "-",
         "rank": rank,
         "point": point,
@@ -279,18 +278,22 @@ def display_room_status(profile_data, input_room_id):
             # --- ▼ 数値フォーマット関数（カンマ区切りを切替可能） ▼ ---
             def _fmt_int_for_display(v, use_comma=True):
                 try:
+                    # Noneや空文字列、NaNをハイフンに
                     if v is None or (isinstance(v, (str, float)) and (v == "" or pd.isna(v))):
                         return "-"
                     num = int(v)
                     return f"{num:,}" if use_comma else f"{num}"
                 except Exception:
+                    # int()変換に失敗した場合はそのまま文字列として返す
                     return str(v)
 
             # --- ▼ 列ごとにフォーマット適用 ▼ ---
             for col in dfp_display.columns:
                 if col == 'ポイント':
+                    # ポイントはカンマ区切りあり
                     dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=True))
                 elif col in ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位']:
+                    # その他数値はカンマ区切りなし（コンパクト表示のため）
                     dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=False))
 
             # ルーム名をリンクにしてテーブル表示
