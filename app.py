@@ -200,7 +200,6 @@ def display_room_status(profile_data, input_room_id):
     
     
     # --- 💡 カスタムCSSの定義（タイトル領域、項目値の統一） ---
-    # タイトル領域のスタイルと、ルーム基本情報で使用するカスタム要素のスタイルを定義
     custom_styles = """
     <style>
     /* 全体のフォント統一と余白調整 */
@@ -250,7 +249,7 @@ def display_room_status(profile_data, input_room_id):
         display: block; /* ブロック要素にして縦の並びを確保 */
     }
     .metric-value {
-        font-size: 24px !important; /* 🔥 項目値を24pxに統一 */
+        font-size: 24px !important; /* 項目値を24pxに統一 */
         font-weight: bold;
         line-height: 1.1;
         color: #1c1c1c;
@@ -260,10 +259,68 @@ def display_room_status(profile_data, input_room_id):
     .stMetric label {
         font-size: 14px; 
     }
-    /* st.metric の値を24pxに統一 */
     .stMetric > div > div:nth-child(2) > div {
         font-size: 24px !important; 
         font-weight: bold;
+    }
+    
+    /* ⭐ テーブルコンテナに横スクロールを適用 (前回の不確実なセレクタを削除) */
+    /* 代わりに、HTMLテーブルをラップする div にインラインで overflow-x: auto を適用します。 */
+    
+    /* HTMLテーブルのスタイルをここで定義しておき、後でテーブルのHTMLに適用 */
+    /* StreamlitのHTMLレンダリング領域内 (stHtml) の DataFrame スタイル */
+    .stHtml .dataframe {
+        width: 100%; /* PCで幅を最大限に活用 */
+        min-width: 900px; /* スマホで横スクロールを発生させるための最小幅を拡大 */
+        border-collapse: collapse;
+    }
+    .stHtml .dataframe th {
+        background-color: #e8eaf6; 
+        color: #1a237e; 
+        font-weight: bold;
+        padding: 8px 10px; 
+        font-size: 14px;
+        text-align: left;
+        border-bottom: 2px solid #c5cae9; 
+        white-space: nowrap;
+    }
+    .stHtml .dataframe td {
+        padding: 6px 10px; 
+        font-size: 13px; 
+        line-height: 1.4;
+        border-bottom: 1px solid #f0f0f0;
+        white-space: nowrap; 
+    }
+    .stHtml .dataframe tbody tr:hover {
+        background-color: #f7f9fd; 
+    }
+
+    /* 列ごとの配置調整 */
+    /* 数値系の列をすべて右寄せに統一 */
+    .stHtml .dataframe th:nth-child(2), .stHtml .dataframe td:nth-child(2), /* Lv */
+    .stHtml .dataframe th:nth-child(4), .stHtml .dataframe td:nth-child(4), /* フォロワー数 */
+    .stHtml .dataframe th:nth-child(5), .stHtml .dataframe td:nth-child(5), /* まいにち配信 */
+    .stHtml .dataframe th:nth-child(7), .stHtml .dataframe td:nth-child(7), /* 順位 */
+    .stHtml .dataframe th:nth-child(8), .stHtml .dataframe td:nth-child(8) { /* ポイント */
+        text-align: right !important; 
+        width: 10%;
+    }
+    /* ランクを中央寄せ */
+    .stHtml .dataframe th:nth-child(3), .stHtml .dataframe td:nth-child(3) { 
+        text-align: center !important; 
+        width: 8%;
+    }
+    /* 公/フを中央寄せ */
+    .stHtml .dataframe th:nth-child(6), .stHtml .dataframe td:nth-child(6) { 
+        text-align: center !important; 
+        font-weight: bold;
+        color: inherit; 
+        width: 5%;
+    }
+    /* ルーム名のセル幅を柔軟に */
+    .stHtml .dataframe th:nth-child(1), .stHtml .dataframe td:nth-child(1) {
+        min-width: 250px; /* ルーム名に確保する最小幅を拡大 */
+        white-space: normal !important; 
     }
     </style>
     """
@@ -271,11 +328,10 @@ def display_room_status(profile_data, input_room_id):
 
     # ヘルパー関数: カスタムスタイルを適用したメトリックを表示
     def custom_metric(label, value):
-        # 🚨 「公式 or フリー」の色付けを削除しました
         st.markdown(
             f'<div class="custom-metric-container">'
             f'<span class="metric-label">{label}</span>'
-            f'<div class="metric-value">{value}</div>' # .metric-value クラスで 24px に統一
+            f'<div class="metric-value">{value}</div>'
             f'</div>',
             unsafe_allow_html=True
         )
@@ -285,7 +341,7 @@ def display_room_status(profile_data, input_room_id):
     st.markdown(
         f'<div class="room-title-container">'
         f'<span class="title-icon">🎤</span>'
-        f'<h1><a href="{room_url}" target="_blank"><u>{room_name} ({input_room_id})</u></a> のルームステータス</h1>'
+        f'<h1><a href="{room_url}" target="_blank">{room_name} ({input_room_id})</a> のルームステータス</h1>'
         f'</div>', 
         unsafe_allow_html=True
     )
@@ -310,7 +366,6 @@ def display_room_status(profile_data, input_room_id):
         custom_metric("ジャンル", genre_name)
 
     with col4:
-        # スコアも他の項目値と同じフォントサイズ (24px) で表示
         custom_metric("上位ランクまでのスコア", f'{next_score:,}' if isinstance(next_score, int) else str(next_score))
         custom_metric("下位ランクまでのスコア", f'{prev_score:,}' if isinstance(prev_score, int) else str(prev_score))
 
@@ -475,66 +530,6 @@ def display_room_status(profile_data, input_room_id):
 
             # コンパクトに expander 内で表示
             with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
-                # 見栄え改善のためのカスタムCSS (テーブル用)
-                table_style = """
-                <style>
-                /* テーブル全体のスタイル */
-                .stHtml .dataframe {
-                    width: 100%; 
-                    border-collapse: collapse;
-                }
-                /* ヘッダーのスタイル */
-                .stHtml .dataframe th {
-                    background-color: #e8eaf6; /* ヘッダーの背景色をライトブルーに */
-                    color: #1a237e; /* ヘッダーの文字色を濃い青に */
-                    font-weight: bold;
-                    padding: 8px 10px; /* パディング調整 */
-                    font-size: 14px;
-                    text-align: left;
-                    border-bottom: 2px solid #c5cae9; /* 太い下線 */
-                    white-space: nowrap;
-                }
-                /* セルのスタイル */
-                .stHtml .dataframe td {
-                    padding: 6px 10px; /* パディング調整 */
-                    font-size: 13px; 
-                    line-height: 1.4;
-                    border-bottom: 1px solid #f0f0f0;
-                    white-space: nowrap; 
-                }
-                /* 行のホバー効果 */
-                .stHtml .dataframe tbody tr:hover {
-                    background-color: #f7f9fd; /* ホバー時の背景色をさらに薄く */
-                }
-
-                /* 列ごとの配置調整 */
-                /* ポイント列を右寄せ */
-                .stHtml .dataframe th:nth-child(8), 
-                .stHtml .dataframe td:nth-child(8) {
-                    text-align: right !important; 
-                    font-weight: bold;
-                }
-                /* Lv, フォロワー数, まいにち配信, 順位を中央寄せ */
-                .stHtml .dataframe th:nth-child(2), .stHtml .dataframe td:nth-child(2),
-                .stHtml .dataframe th:nth-child(4), .stHtml .dataframe td:nth-child(4),
-                .stHtml .dataframe th:nth-child(5), .stHtml .dataframe td:nth-child(5),
-                .stHtml .dataframe th:nth-child(7), .stHtml .dataframe td:nth-child(7) {
-                    text-align: center !important; 
-                }
-                /* 公/フを中央寄せ */
-                .stHtml .dataframe th:nth-child(6), .stHtml .dataframe td:nth-child(6) {
-                    text-align: center !important; 
-                    font-weight: bold;
-                    /* 公/フの文字色はテーブル内でも標準色に統一 */
-                    color: inherit; 
-                }
-                /* ルーム名のセル幅を柔軟に */
-                .stHtml .dataframe th:nth-child(1), .stHtml .dataframe td:nth-child(1) {
-                    min-width: 180px; 
-                    white-space: normal !important; /* ルーム名のみ折り返しを許可 (長すぎる場合) */
-                }
-                </style>
-                """
                 
                 # to_htmlでHTMLタグが混入したルーム名列を正しくエスケープせずに表示させる
                 html_table = dfp_display.to_html(
@@ -548,8 +543,12 @@ def display_room_status(profile_data, input_room_id):
                 html_table = html_table.replace('\n', '')
                 html_table = re.sub(r'>\s+<', '><', html_table)
 
+                # ⭐ HTMLテーブル全体を div でラップし、インラインで横スクロールを強制適用
+                # これにより、Streamlitの内部コンテナ構造に依存せず、スマホで横スクロールが可能になります。
+                html_container = f'<div style="overflow-x: auto; padding-bottom: 10px;">{html_table}</div>'
+
                 # カスタムCSSとHTMLテーブルを一緒に表示
-                st.markdown(table_style + html_table, unsafe_allow_html=True)
+                st.markdown(html_container, unsafe_allow_html=True)
         else:
             st.info("参加ルーム情報が取得できませんでした（ランキングイベントではない、またはデータがまだありません）。")
 
