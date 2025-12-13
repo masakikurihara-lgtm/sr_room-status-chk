@@ -67,7 +67,6 @@ def get_room_profile(room_id):
 # --- イベント情報取得関数群 ---
 
 def get_total_entries(event_id):
-    # 既存ロジックを維持
     params = {"event_id": event_id}
     try:
         response = requests.get(API_EVENT_ROOM_LIST_URL, headers=HEADERS, params=params, timeout=10)
@@ -83,7 +82,6 @@ def get_total_entries(event_id):
 
 
 def get_event_room_list_data(event_id):
-    # 既存ロジックを維持
     params = {"event_id": event_id}
     try:
         resp = requests.get(API_EVENT_ROOM_LIST_URL, headers=HEADERS, params=params, timeout=10)
@@ -110,15 +108,14 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     上位10ルームについては、個別のプロフィールAPIを叩いて詳細情報を統合する。
     """
     if not event_id:
-        return {"total_entries": "-", "rank": "-", "point": "-", "level": "-", "top_participants": [], "raw_api_data_sample": None}
+        # デバッグ情報キーを削除
+        return {"total_entries": "-", "rank": "-", "point": "-", "level": "-", "top_participants": []}
 
     total_entries = get_total_entries(event_id)
     room_list_data = get_event_room_list_data(event_id)
     current_room_data = None
     
-    # --- デバッグ情報として生APIデータのサンプルを抽出 (先頭3件) ---
-    raw_api_data_sample = room_list_data[:3]
-    # -----------------------------------------------------------------
+    # 生APIデータのサンプル抽出を削除
     
     # ターゲットルームの情報をリストから探す
     for room in room_list_data:
@@ -129,11 +126,9 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     rank = _safe_get(current_room_data, ["rank"], "-")
     point = _safe_get(current_room_data, ["point"], "-")
     
-    # 🔥 修正: ターゲットルームのレベルを `event_entry.quest_level` から取得するように変更
+    # ターゲットルームのレベルを `event_entry.quest_level` から取得
     level = _safe_get(current_room_data, ["event_entry", "quest_level"], "-")
     
-    # ... (以下のロジックは変更なし) ...
-
     top_participants = room_list_data
     if top_participants:
         # pointは文字列またはNoneの可能性があるため、intにキャストしてソート
@@ -148,14 +143,13 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
         room_id = participant.get('room_id')
         
         # 取得必須のキーを初期化（Noneで初期化）
-        # 'room_level_profile' のように、プロフィールAPI由来であることを明示的にキー名変更
         for key in ['room_level_profile', 'show_rank_subdivided', 'follower_num', 'live_continuous_days', 'is_official_api']: 
             participant[key] = None
             
         if room_id:
             profile = get_room_profile(room_id)
             if profile:
-                # 🔥 修正: プロフィールAPIから取得した「ルームレベル」を 'room_level_profile' として格納
+                # プロフィールAPIから取得した「ルームレベル」を 'room_level_profile' として格納
                 participant['room_level_profile'] = _safe_get(profile, ["room_level"], None)
                 participant['show_rank_subdivided'] = _safe_get(profile, ["show_rank_subdivided"], None)
                 participant['follower_num'] = _safe_get(profile, ["follower_num"], None)
@@ -165,16 +159,12 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
                 if not participant.get('room_name'):
                      participant['room_name'] = _safe_get(profile, ["room_name"], f"Room {room_id}")
         
-        
-        # 🔥 修正: イベントの「レベル」を event_entry.quest_level から取得し、
-        #          DataFrame化のために 'event_quest_level' というキーで格納
-        #          （元のコードのロジックを尊重しつつ、ネストされたキーからの取得を実装）
+        # イベントの「レベル」を event_entry.quest_level から取得
         participant['quest_level'] = _safe_get(participant, ["event_entry", "quest_level"], None)
         
         # 最終的に quest_level がセットされていない場合、ここでキーを追加（DataFrame化でエラーが出ないように）
-        # (このifは上記で quest_level に値を代入しているため冗長だが、元のロジックを尊重して削除しない)
         if 'quest_level' not in participant:
-             participant['quest_level'] = _safe_get(participant, ["quest_level"], None)
+             participant['quest_level'] = None
 
         enriched_participants.append(participant)
 
@@ -183,9 +173,9 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
         "total_entries": total_entries if isinstance(total_entries, int) and total_entries > 0 else "-",
         "rank": rank,
         "point": point,
-        "level": level, # ターゲットルームのレベルはこれでOK
+        "level": level, # ターゲットルームのレベル
         "top_participants": enriched_participants, # エンリッチされたリストを返す
-        "raw_api_data_sample": raw_api_data_sample # 生データデバッグ情報
+        # "raw_api_data_sample" の返却を削除
     }
 # --- イベント情報取得関数群ここまで ---
 
@@ -414,13 +404,13 @@ def display_room_status(profile_data, input_room_id):
 
         # イベント参加情報（API取得）
         with st.spinner("イベント参加情報を取得中..."):
+            # get_event_participants_info のデバッグ引数 (raw_api_data_sample) を削除
             event_info = get_event_participants_info(event_id, input_room_id, limit=10)
             
             total_entries = event_info["total_entries"]
             rank = event_info["rank"]
             point = event_info["point"]
             level = event_info["level"] # ターゲットルームのレベル
-            raw_api_data_sample = event_info["raw_api_data_sample"] # 生データデバッグ情報
             
             # イベント参加情報表示 (4カラムで横並び) - st.metric を使用
             st.markdown("#### 参加状況（自己ルーム）")
@@ -439,16 +429,7 @@ def display_room_status(profile_data, input_room_id):
 
         st.divider()
 
-        # --- 🚨 新しいデバッグ情報表示セクション (生データ) ---
-        st.markdown("### 🔴 API生データサンプル（イベント参加情報）")
-        if raw_api_data_sample and raw_api_data_sample != "N/A":
-            st.warning("この情報には、レベル情報の正しいキー名が含まれている可能性があります。自己ルームのレベルは `event_entry.quest_level` から取得されています。")
-            json_str = json.dumps(raw_api_data_sample, indent=2, ensure_ascii=False)
-            st.code(json_str, language='json')
-        else:
-            st.info("API生データサンプルは取得できませんでした。")
-        st.markdown("---")
-        # ----------------------------------------
+        # --- 🚨 API生データサンプル表示セクションを削除 ---
         
         # --- 4. 🔝 参加イベント上位10ルーム（HTMLテーブル） ---
         st.markdown("### 🔝 参加イベント上位10ルーム")
@@ -520,7 +501,6 @@ def display_room_status(profile_data, input_room_id):
                     return str(v)
 
             # --- ▼ 列ごとにフォーマット適用 ▼ ---
-            # ルームレベルはプロフィールAPIのレベルを使用し、カンマなしで整形
             format_cols_no_comma = ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位'] 
             format_cols_comma = ['ポイント']
 
@@ -533,46 +513,19 @@ def display_room_status(profile_data, input_room_id):
                     dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=False))
             
 
-            # 🔥 最終デバッグロジックと「レベル」列のフォーマット処理
-
-            # デバッグ情報を格納するリスト
-            debug_data = [] 
-
-            def format_level_safely_FINAL_WITH_DEBUG(val, room_id):
-                """APIの値(val)を安全にレベル表示用文字列に変換する (デバッグ情報付き)"""
-                raw_type = type(val).__name__
-                
-                # None, NaN, 空文字列、空リスト/タプル、False の場合にハイフン "-" を返す
+            # 🔥 「レベル」列のフォーマット処理 (デバッグ情報なし)
+            def format_level_safely_FINAL(val):
+                """APIの値(val)を安全にレベル表示用文字列に変換する"""
                 if val is None or pd.isna(val) or str(val).strip() == "" or val is False or (isinstance(val, (list, tuple)) and not val):
-                    final_value = "-"
+                    return "-"
                 else:
                     try:
-                        # 有効な数値（0や2など）は必ず整数文字列に変換して返す
-                        final_value = str(int(val))
+                        return str(int(val))
                     except (ValueError, TypeError):
-                        # 数値変換できなかった場合はハイフンを返す
-                        final_value = "-"
-                
-                # デバッグ情報を記録
-                debug_data.append({
-                    'Room ID': room_id,
-                    # キー名を quest_level に戻す (元コードに合わせる)
-                    'API Raw Value (quest_level)': str(val), 
-                    'API Raw Type': raw_type,
-                    'Conversion Result': final_value
-                })
-                
-                return final_value
+                        return "-"
 
             if 'レベル' in dfp_display.columns:
-                # 処理に使うroom_id列（一時的に残っている）を取得
-                room_ids = dfp_display['room_id'] 
-                
-                # apply関数は一つの引数しか取れないため、zipを使ってループ処理
-                dfp_display['レベル'] = [
-                    format_level_safely_FINAL_WITH_DEBUG(level_val, room_id)
-                    for level_val, room_id in zip(dfp_display['レベル'], room_ids)
-                ]
+                dfp_display['レベル'] = dfp_display['レベル'].apply(format_level_safely_FINAL)
             
             
             # 最終的な欠損値/空文字列のハイフン化（主にランクなど数値フォーマットを通らない文字列列用）
@@ -601,27 +554,7 @@ def display_room_status(profile_data, input_room_id):
                  'まいにち配信', '公/フ', '順位', 'ポイント', 'レベル'] 
             ]
             
-            # --- 💡 以前のデバッグ情報表示セクション (レベル変換結果) ---
-            if debug_data:
-                st.markdown("---")
-                st.markdown("### 🐞 デバッグ情報（レベル列の変換結果）")
-                
-                df_debug = pd.DataFrame(debug_data)
-                
-                # Room IDをリンクに変換
-                def make_room_id_link(room_id):
-                    return f'<a href="https://www.showroom-live.com/room/profile?room_id={room_id}" target="_blank">{room_id}</a>'
-                
-                df_debug['Room ID'] = df_debug['Room ID'].apply(make_room_id_link)
-                
-                html_debug_table = df_debug.to_html(
-                    escape=False, 
-                    index=False, 
-                    justify='left', 
-                    classes='dataframe data-table' 
-                )
-                st.markdown(f'<div style="overflow-x: auto; padding-bottom: 10px;">{html_debug_table}</div>', unsafe_allow_html=True)
-            # -----------------------------------
+            # --- 💡 レベル変換結果デバッグ情報セクションを削除 ---
 
             # コンパクトに expander 内で表示
             with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
@@ -644,15 +577,6 @@ def display_room_status(profile_data, input_room_id):
 
     else:
         st.info("現在、このルームはイベントに参加していません。")
-        
-        # イベント不参加の場合は、過去のデバッグ情報を表示しない
-        st.markdown("---")
-        st.markdown("### 🔴 API生データサンプル（イベント参加情報）")
-        st.info("ルームがイベントに参加していないため、イベントAPIデータはありません。")
-        st.markdown("---")
-        st.markdown("### 🐞 デバッグ情報（レベル列の変換結果）")
-        st.info("ルームがイベントに参加していないため、デバッグ情報はありません。")
-        st.markdown("---")
 
 
 # --- メインロジック ---
@@ -699,8 +623,6 @@ if st.session_state.authenticated:
     st.title("💖 SHOWROOM ルームステータス可視化ツール")
     st.markdown("### 🔎 ルームIDの入力")
     
-    # ユーザーが提供したコードでは room_id の入力と表示ロジックが分離されていたため、そのまま維持
-    # メインロジックの input_room_id_current は display_room_status を呼び出す際の引数として使用されます。
     input_room_id_current = st.text_input(
         "表示したいルームIDを入力してください:",
         placeholder="例: 496122",
