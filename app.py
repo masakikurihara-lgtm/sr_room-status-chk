@@ -7,10 +7,10 @@ from dateutil import parser
 import numpy as np
 
 # Streamlit の初期設定
-# StreamlitInvalidPageLayoutErrorを避けるため、initial_sidebar_state="collapsed"を削除しました。
+# 環境依存のエラー (StreamlitInvalidPageLayoutError) を避けるため、
+# set_page_configの引数を最小限にしました。レイアウトはデフォルト（縦型向き）になります。
 st.set_page_config(
-    page_title="SHOWROOM ルームステータス可視化ツール",
-    layout="auto" # 縦型（スマートフォン）を考慮
+    page_title="SHOWROOM ルームステータス可視化ツール"
 )
 
 # --- 定数設定 ---
@@ -232,12 +232,10 @@ def display_room_status(profile_data, input_room_id):
             # イベント参加情報表示 (4カラムで横並び)
             event_col_data1, event_col_data2, event_col_data3, event_col_data4 = st.columns(4)
             with event_col_data1:
-                # Note: total_entriesがint型または"-"である前提
                 st.metric(label="参加ルーム数", value=f"{total_entries:,}" if isinstance(total_entries, int) else str(total_entries))
             with event_col_data2:
                 st.metric(label="順位", value=str(rank))
             with event_col_data3:
-                # Note: pointがint型または"-"である前提
                 st.metric(label="ポイント", value=f"{point:,}" if isinstance(point, int) else str(point))
             with event_col_data4:
                 st.metric(label="レベル", value=str(level))
