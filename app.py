@@ -108,14 +108,11 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     上位10ルームについては、個別のプロフィールAPIを叩いて詳細情報を統合する。
     """
     if not event_id:
-        # デバッグ情報キーを削除
         return {"total_entries": "-", "rank": "-", "point": "-", "level": "-", "top_participants": []}
 
     total_entries = get_total_entries(event_id)
     room_list_data = get_event_room_list_data(event_id)
     current_room_data = None
-    
-    # 生APIデータのサンプル抽出を削除
     
     # ターゲットルームの情報をリストから探す
     for room in room_list_data:
@@ -175,7 +172,6 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
         "point": point,
         "level": level, # ターゲットルームのレベル
         "top_participants": enriched_participants, # エンリッチされたリストを返す
-        # "raw_api_data_sample" の返却を削除
     }
 # --- イベント情報取得関数群ここまで ---
 
@@ -273,6 +269,9 @@ def display_room_status(profile_data, input_room_id):
         width: 100%; 
         border-collapse: collapse;
         margin-top: 10px; 
+        /* 修正③: テーブル全体をセンタリング */
+        margin-left: auto;
+        margin-right: auto;
     }
     .stHtml .dataframe th {
         background-color: #e8eaf6; 
@@ -280,7 +279,7 @@ def display_room_status(profile_data, input_room_id):
         font-weight: bold;
         padding: 8px 10px; 
         font-size: 14px;
-        text-align: left;
+        text-align: center; /* 修正③: ヘッダーを中央寄せ */
         border-bottom: 2px solid #c5cae9; 
         white-space: nowrap;
     }
@@ -289,39 +288,45 @@ def display_room_status(profile_data, input_room_id):
         font-size: 13px; 
         line-height: 1.4;
         border-bottom: 1px solid #f0f0f0;
+        text-align: center; /* 修正③: データセルを中央寄せを基本に */
         white-space: nowrap; 
     }
     .stHtml .dataframe tbody tr:hover {
         background-color: #f7f9fd; 
     }
 
-    /* 列ごとの配置調整 (レベルが末尾に来るように調整) */
-    /* 数値系の列をすべて右寄せに統一 */
-    .stHtml .dataframe th:nth-child(2), .stHtml .dataframe td:nth-child(2), /* ルームレベル */
-    .stHtml .dataframe th:nth-child(4), .stHtml .dataframe td:nth-child(4), /* フォロワー数 */
-    .stHtml .dataframe th:nth-child(5), .stHtml .dataframe td:nth-child(5), /* まいにち配信 */
-    .stHtml .dataframe th:nth-child(7), .stHtml .dataframe td:nth-child(7), /* 順位 */
-    .stHtml .dataframe th:nth-child(8), .stHtml .dataframe td:nth-child(8), /* ポイント */
-    .stHtml .dataframe th:nth-child(9), .stHtml .dataframe td:nth-child(9) { /* レベル (最終列) */
-        text-align: right !important; 
-        width: 10%; 
-    }
-    /* ランクと公/フを中央寄せ */
-    .stHtml .dataframe th:nth-child(3), .stHtml .dataframe td:nth-child(3) { /* ランク */
-        text-align: center !important; 
-        width: 8%;
-    }
-    .stHtml .dataframe th:nth-child(6), .stHtml .dataframe td:nth-child(6) { /* 公/フ */
-        text-align: center !important; 
-        font-weight: bold;
-        color: inherit; 
-        width: 5%;
-    }
-    /* ルーム名のセル幅を柔軟に */
+    /* 列ごとの配置調整 */
+    /* ルーム名 (1列目): 左寄せ */
     .stHtml .dataframe th:nth-child(1), .stHtml .dataframe td:nth-child(1) {
+        text-align: left !important; 
         min-width: 280px; 
         white-space: normal !important; 
     }
+    
+    /* 数値系の列を右寄せに統一 (ルームレベル、フォロワー数、まいにち配信、ポイント) */
+    .stHtml .dataframe th:nth-child(2), .stHtml .dataframe td:nth-child(2), /* ルームレベル */
+    .stHtml .dataframe th:nth-child(4), .stHtml .dataframe td:nth-child(4), /* フォロワー数 */
+    .stHtml .dataframe th:nth-child(5), .stHtml .dataframe td:nth-child(5), /* まいにち配信 */
+    .stHtml .dataframe th:nth-child(8), .stHtml .dataframe td:nth-child(8) { /* ポイント */
+        text-align: right !important; 
+        width: 10%; 
+    }
+
+    /* 順位、レベル、ランク、公/フ、ルームIDは中央寄せのまま、幅を調整 */
+    .stHtml .dataframe th:nth-child(3), .stHtml .dataframe td:nth-child(3), /* ランク */
+    .stHtml .dataframe th:nth-child(6), .stHtml .dataframe td:nth-child(6), /* 公式 or フリー (修正②) */
+    .stHtml .dataframe th:nth-child(7), .stHtml .dataframe td:nth-child(7), /* ルームID (修正①) */
+    .stHtml .dataframe th:nth-child(9), .stHtml .dataframe td:nth-child(9), /* 順位 */
+    .stHtml .dataframe th:nth-child(10), .stHtml .dataframe td:nth-child(10) { /* レベル (最終列) */
+        text-align: center !important; 
+        width: 8%;
+    }
+    
+    /* '公式 or フリー' の強調 */
+    .stHtml .dataframe th:nth-child(6), .stHtml .dataframe td:nth-child(6) {
+        font-weight: bold;
+    }
+    
     </style>
     """
     st.markdown(custom_styles, unsafe_allow_html=True)
@@ -404,7 +409,6 @@ def display_room_status(profile_data, input_room_id):
 
         # イベント参加情報（API取得）
         with st.spinner("イベント参加情報を取得中..."):
-            # get_event_participants_info のデバッグ引数 (raw_api_data_sample) を削除
             event_info = get_event_participants_info(event_id, input_room_id, limit=10)
             
             total_entries = event_info["total_entries"]
@@ -429,8 +433,6 @@ def display_room_status(profile_data, input_room_id):
 
         st.divider()
 
-        # --- 🚨 API生データサンプル表示セクションを削除 ---
-        
         # --- 4. 🔝 参加イベント上位10ルーム（HTMLテーブル） ---
         st.markdown("### 🔝 参加イベント上位10ルーム")
         
@@ -452,31 +454,35 @@ def display_room_status(profile_data, input_room_id):
                     
             dfp_display = dfp[cols].copy()
 
-            # ▼ rename（ユーザー様の仕様通り）
+            # ▼ rename
+            # 修正②: 見出しを「公式 or フリー」に
             dfp_display.rename(columns={
                 'room_name': 'ルーム名', 
                 'room_level_profile': 'ルームレベル', 
                 'show_rank_subdivided': 'ランク',
                 'follower_num': 'フォロワー数', 
                 'live_continuous_days': 'まいにち配信', 
+                'room_id': 'ルームID', # 修正①: ルームID
                 'rank': '順位', 
                 'point': 'ポイント',
-                'is_official_api': 'is_official_api',
+                'is_official_api': 'is_official_api', # 一時的に残す
                 'quest_level': 'レベル' 
             }, inplace=True)
 
-            # ▼ 公/フ 判定関数（API情報使用）
-            def get_official_mark_from_api(is_official_value):
-                """APIのis_official値に基づいて公/フを判定する (True=公, False=フ)"""
+            # ▼ 公式 or フリー 判定関数（API情報使用）
+            def get_official_status_from_api(is_official_value):
+                """APIのis_official値に基づいて「公式」または「フリー」を判定する"""
+                # 修正②: 項目値を「公式」または「フリー」に
                 if is_official_value is True:
-                    return "公"
+                    return "公式"
                 elif is_official_value is False:
-                    return "フ"
+                    return "フリー"
                 else:
                     return "不明"
             
-            # ▼ 公/フ を追加
-            dfp_display["公/フ"] = dfp_display['is_official_api'].apply(get_official_mark_from_api)
+            # ▼ 公式 or フリー を追加
+            # 修正②: 見出しを「公式 or フリー」に
+            dfp_display["公式 or フリー"] = dfp_display['is_official_api'].apply(get_official_status_from_api)
             
             dfp_display.drop(columns=['is_official_api'], inplace=True, errors='ignore')
 
@@ -501,7 +507,8 @@ def display_room_status(profile_data, input_room_id):
                     return str(v)
 
             # --- ▼ 列ごとにフォーマット適用 ▼ ---
-            format_cols_no_comma = ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位'] 
+            # ルームIDはカンマなし整数でフォーマットに含める
+            format_cols_no_comma = ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位', 'ルームID'] 
             format_cols_comma = ['ポイント']
 
             for col in format_cols_comma:
@@ -513,7 +520,7 @@ def display_room_status(profile_data, input_room_id):
                     dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=False))
             
 
-            # 🔥 「レベル」列のフォーマット処理 (デバッグ情報なし)
+            # 🔥 「レベル」列のフォーマット処理
             def format_level_safely_FINAL(val):
                 """APIの値(val)を安全にレベル表示用文字列に変換する"""
                 if val is None or pd.isna(val) or str(val).strip() == "" or val is False or (isinstance(val, (list, tuple)) and not val):
@@ -536,29 +543,30 @@ def display_room_status(profile_data, input_room_id):
 
             # --- ルーム名をリンクに置き換える ---
             def _make_link_final(row):
-                rid = row['room_id']
+                rid = row['ルームID'] # room_id は 'ルームID' にリネームされている
                 name = row['ルーム名']
                 if not name:
                     name = f"room_{rid}"
-                return f'<a href="https://www.showroom-live.com/room/profile?room_id={rid}" target="_blank">{name}</a>'
+                # ルームIDがハイフンでない、つまり有効な値の場合のみリンクを生成
+                if rid != '-':
+                    return f'<a href="https://www.showroom-live.com/room/profile?room_id={rid}" target="_blank">{name}</a>'
+                return name
 
             # リンクを生成し、dfp_displayの'ルーム名'列を上書き
             dfp_display['ルーム名'] = dfp_display.apply(_make_link_final, axis=1)
             
-            # 不要になった room_id 列を削除
-            dfp_display.drop(columns=['room_id'], inplace=True, errors='ignore')
+            # 不要になった room_id のドロップは、リネーム後の 'ルームID' 列として残すため削除
 
-            # ▼ 列順をここで整える（レベルは末尾）
+            # ▼ 列順をここで整える（修正①: 公式 or フリー, ルームID, 順位 の順）
             dfp_display = dfp_display[
                 ['ルーム名', 'ルームレベル', 'ランク', 'フォロワー数',
-                 'まいにち配信', '公/フ', '順位', 'ポイント', 'レベル'] 
+                 'まいにち配信', '公式 or フリー', 'ルームID', '順位', 'ポイント', 'レベル'] 
             ]
             
-            # --- 💡 レベル変換結果デバッグ情報セクションを削除 ---
-
             # コンパクトに expander 内で表示
             with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
                 
+                # justify='left' は HTML テーブル生成時の align 属性に影響するため、CSSでの制御を優先
                 html_table = dfp_display.to_html(
                     escape=False, 
                     index=False, 
@@ -569,6 +577,7 @@ def display_room_status(profile_data, input_room_id):
                 html_table = html_table.replace('\n', '')
                 html_table = re.sub(r'>\s+<', '><', html_table)
 
+                # 修正③: CSSでテーブル全体をセンタリングしているため、ここでは div でラップするのみ
                 html_container = f'<div style="overflow-x: auto; padding-bottom: 10px;">{html_table}</div>'
 
                 st.markdown(html_container, unsafe_allow_html=True)
