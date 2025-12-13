@@ -270,7 +270,7 @@ def display_room_status(profile_data, input_room_id):
     /* HTMLテーブルのスタイル */
     .stHtml .dataframe {
         width: 100%; 
-        min-width: 900px; 
+        /*min-width: 900px;*/ 
         border-collapse: collapse;
         margin-top: 10px; /* テーブル上部に少し余白 */
     }
