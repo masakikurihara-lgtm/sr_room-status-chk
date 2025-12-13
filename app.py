@@ -7,7 +7,6 @@ from dateutil import parser
 import numpy as np
 
 # Streamlit の初期設定
-# 環境依存のエラーを避けるため、set_page_configの引数を最小限にしました。
 st.set_page_config(
     page_title="SHOWROOM ルームステータス可視化ツール"
 )
@@ -15,10 +14,7 @@ st.set_page_config(
 # --- 定数設定 ---
 ROOM_LIST_URL = "https://mksoul-pro.com/showroom/file/room_list.csv"
 ROOM_PROFILE_API = "https://www.showroom-live.com/api/room/profile?room_id={room_id}"
-
-# ご提示のロジックに合わせてAPI URLとヘッダーを定義
-API_EVENT_ROOM_LIST_URL = "https://www.showroom-live.com/api/event/room_list" # ページングなしのベースURL
-# ヘッダーは通常、APIから情報を取得する際は不要ですが、念のため空の辞書を定義
+API_EVENT_ROOM_LIST_URL = "https://www.showroom-live.com/api/event/room_list" 
 HEADERS = {} 
 
 GENRE_MAP = {
@@ -65,7 +61,8 @@ def get_room_profile(room_id):
     except requests.exceptions.RequestException:
         return None
 
-# --- ▼ ご提示のロジックを組み込んだ関数 ▼ ---
+# --- イベント情報取得関数群 (前回のロジック維持) ---
+
 def get_total_entries(event_id):
     """
     指定されたイベントの総参加ルーム数を取得します。
@@ -73,12 +70,10 @@ def get_total_entries(event_id):
     params = {"event_id": event_id}
     try:
         response = requests.get(API_EVENT_ROOM_LIST_URL, headers=HEADERS, params=params, timeout=10)
-        # 404エラーは参加者情報がない場合なので正常系として扱う
         if response.status_code == 404:
             return 0
         response.raise_for_status()
         data = response.json()
-        # 'total_entries' キーから参加ルーム数を取得
         return data.get('total_entries', 0)
     except requests.exceptions.RequestException:
         return "N/A"
@@ -91,15 +86,11 @@ def get_event_room_list_data(event_id):
     params = {"event_id": event_id}
     try:
         resp = requests.get(API_EVENT_ROOM_LIST_URL, headers=HEADERS, params=params, timeout=10)
-        
-        # 404エラーの場合は空リストを返す
         if resp.status_code == 404:
             return []
-            
         resp.raise_for_status()
         data = resp.json()
         
-        # キー名が環境で異なるので複数のキーをチェック
         if isinstance(data, dict):
             for k in ('list', 'room_list', 'event_entry_list', 'entries', 'data', 'event_list'):
                 if k in data and isinstance(data[k], list):
@@ -108,7 +99,6 @@ def get_event_room_list_data(event_id):
             return data
             
     except Exception:
-        # 何か失敗したら空リストを返す（呼び出し側で扱いやすくするため）
         return []
         
     return []
@@ -120,32 +110,23 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     if not event_id:
         return {"total_entries": "-", "rank": "-", "point": "-", "level": "-", "top_participants": []}
 
-    # 1. 総参加者数を取得
     total_entries = get_total_entries(event_id)
-    
-    # 2. 上位ルームリスト（1ページ目）を取得
     room_list_data = get_event_room_list_data(event_id)
-    
     current_room_data = None
     
-    # ターゲットルームの情報をリストから探す
     for room in room_list_data:
         if str(room.get("room_id")) == str(target_room_id):
             current_room_data = room
             break
 
-    # ターゲットルームの情報を設定 (APIからNoneが返された場合に"-"を確実に設定)
     rank = _safe_get(current_room_data, ["rank"], "-")
     point = _safe_get(current_room_data, ["point"], "-")
     level = _safe_get(current_room_data, ["quest_level"], "-")
 
-    # 上位10ルームをポイント順にソートして抽出（room_list_dataは既に上位データ）
     top_participants = room_list_data
     if top_participants:
-        # ポイントでソート (pointがない/None/無効な値の場合は0として扱う)
         top_participants.sort(key=lambda x: int(str(x.get('point', 0) or 0)), reverse=True)
     
-    # 上限10ルームに制限
     top_participants = top_participants[:limit]
 
 
@@ -156,7 +137,7 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
         "level": level,
         "top_participants": top_participants
     }
-# --- ▲ ご提示のロジックを組み込んだ関数 ▲ ---
+# --- イベント情報取得関数群ここまで ---
 
 
 def display_room_status(profile_data, input_room_id):
@@ -258,11 +239,10 @@ def display_room_status(profile_data, input_room_id):
 
         st.divider()
 
-        # --- 🔝 参加イベント上位10ルーム（プラスアルファ情報） ---
+        # --- 🔝 参加イベント上位10ルーム（Streamlitネイティブ表示） ---
         st.markdown("### 🔝 参加イベント上位10ルーム")
         
         if top_participants:
-            # DataFrame 化して列名を日本語化して表示（ルーム名はリンク付きで表示）
             dfp = pd.DataFrame(top_participants)
             
             # 必要なカラムが全て存在するように初期化
@@ -278,94 +258,45 @@ def display_room_status(profile_data, input_room_id):
 
             # ▼ rename
             dfp_display.rename(columns={
-                'room_name': 'ルーム名', 'room_level': 'ルームレベル', 'show_rank_subdivided': 'SHOWランク',
-                'follower_num': 'フォロワー数', 'live_continuous_days': 'まいにち配信', 'room_id': 'ルームID',
-                'rank': '順位', 'point': 'ポイント'
+                'room_name': 'ルーム名', 'room_level': 'Lv', 'show_rank_subdivided': 'ランク',
+                'follower_num': 'Fw数', 'live_continuous_days': 'まいにち', 'room_id': 'ID',
+                'rank': '順位', 'point': 'P'
             }, inplace=True)
 
             # ▼ 公/フ を追加
-            dfp_display["公/フ"] = dfp_display["ルームID"].apply(get_official_mark)
+            dfp_display["公/フ"] = dfp_display["ID"].apply(get_official_mark)
 
-            # ▼ 列順を整える
+            # ▼ 表示列順を整える (コンパクト表示)
             dfp_display = dfp_display[
-                ['ルーム名', 'ルームレベル', 'SHOWランク', 'フォロワー数',
-                 'まいにち配信', '公/フ', 'ルームID', '順位', 'ポイント']
+                ['順位', 'P', 'ルーム名', 'ID', 'Lv', 'ランク', 'Fw数', 'まいにち', '公/フ']
             ]
 
-            # --- ▼ 数値フォーマット関数（カンマ区切りを切替可能） ▼ ---
+            # --- ▼ 数値フォーマット関数 ▼ ---
             def _fmt_int_for_display(v, use_comma=True):
                 try:
-                    # Noneや空文字列、NaNをハイフンに
                     if v is None or (isinstance(v, (str, float)) and (v == "" or pd.isna(v))):
                         return "-"
-                    # 数値への変換を試みる
                     num = int(v)
                     return f"{num:,}" if use_comma else f"{num}"
                 except (ValueError, TypeError):
-                    # int()変換に失敗した場合はそのまま文字列として返す
                     return str(v)
 
             # --- ▼ 列ごとにフォーマット適用 ▼ ---
-            for col in dfp_display.columns:
-                if col == 'ポイント':
-                    # ポイントはカンマ区切りあり
-                    dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=True))
-                elif col in ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位']:
-                    # その他数値はカンマ区切りなし（コンパクト表示のため）
-                    dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=False))
-                
-            # ルーム名をリンクにしてテーブル表示
-            def _make_link(row):
-                rid = row['ルームID']
-                # ルーム名の前後のスペースや改行を削除し、Noneの場合は代替テキストを使用
-                name = str(row['ルーム名']).strip() if row['ルーム名'] else f"room_{rid}"
-                # URLエンコードの必要はありませんが、リンクとして確実にする
-                return f'<a href="https://www.showroom-live.com/room/profile?room_id={rid}" target="_blank">{name}</a>'
-
-            dfp_display['ルーム名_link'] = dfp_display.apply(_make_link, axis=1)
-
-            # ルーム名（リンク）を元の列に置き換え、ルームIDを削除
-            dfp_display = dfp_display.drop(columns=['ルーム名', 'ルームID'])
-            dfp_display.rename(columns={'ルーム名_link': 'ルーム名'}, inplace=True)
+            for col in ['Lv', 'Fw数', 'まいにち', '順位']:
+                dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=False))
+            dfp_display['P'] = dfp_display['P'].apply(lambda x: _fmt_int_for_display(x, use_comma=True))
             
-            # 列順を最終的に整える
-            cols_order = ['ルーム名', 'ルームレベル', 'SHOWランク', 'フォロワー数',
-                          'まいにち配信', '公/フ', '順位', 'ポイント']
-            dfp_display = dfp_display[cols_order]
-
-            # コンパクトに expander 内で表示
+            # ルーム名がNoneやNaNの場合は空文字列に変換
+            dfp_display['ルーム名'] = dfp_display['ルーム名'].fillna('')
+            dfp_display['ランク'] = dfp_display['ランク'].fillna('-')
+            
+            # Streamlitのネイティブなデータフレーム表示を使用
             with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
-                # HTML表示時のスタイル調整
-                style = """
-                <style>
-                /* テーブル全体の幅を確保 */
-                .data-table-full-width {
-                    width: 100%;
-                }
-                /* セルのスタイルをコンパクトに */
-                .data-table th, .data-table td {
-                    white-space: nowrap; /* テキストの折り返しを強制的に防ぐ */
-                    font-size: 12px; /* フォントサイズを小さく */
-                    padding: 4px 6px; /* パディングを調整 */
-                    text-align: left;
-                }
-                /* ヘッダーの幅を調整（特にルーム名を柔軟に） */
-                .data-table th:nth-child(1) { width: 30%; } /* ルーム名 */
-                .data-table th:nth-child(2),
-                .data-table th:nth-child(3) { width: 10%; } /* レベル/ランク */
-                .data-table th:nth-child(6) { width: 5%; } /* 公/フ */
-                </style>
-                """
-                
-                # to_htmlでHTMLタグが混入したルーム名列を正しくエスケープせずに表示させる
-                html_table = dfp_display.to_html(
-                    escape=False, 
-                    index=False, 
-                    justify='left', 
-                    classes='data-table data-table-full-width'
-                )
-                
-                st.markdown(style + html_table, unsafe_allow_html=True)
+                # HTMLの崩れを回避するため、st.dataframe()を使用
+                st.dataframe(dfp_display, 
+                             hide_index=True, 
+                             use_container_width=True) # 縦型考慮のため幅いっぱいに使用
+
         else:
             st.info("参加ルーム情報が取得できませんでした（ランキングイベントではない、またはデータがまだありません）。")
 
