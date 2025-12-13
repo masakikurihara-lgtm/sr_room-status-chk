@@ -306,19 +306,19 @@ def display_room_status(profile_data, input_room_id):
 
     /* 列ごとの配置調整 (10列のインデックス調整) */
     
-    /* 1. ルーム名: 左寄せ */
+    /* 1. ルーム名: 中央寄せ */
     .stHtml .dataframe th:nth-child(1), .stHtml .dataframe td:nth-child(1) {
         text-align: center !important; /* 強制中央せ */
         min-width: 280px; 
         white-space: normal !important; 
     }
     
-    /* 数値系の列を右寄せに統一 */
+    /* 数値系の列を中央寄せに統一 */
     .stHtml .dataframe th:nth-child(2), .stHtml .dataframe td:nth-child(2), /* ルームレベル */
     .stHtml .dataframe th:nth-child(4), .stHtml .dataframe td:nth-child(4), /* フォロワー数 */
     .stHtml .dataframe th:nth-child(5), .stHtml .dataframe td:nth-child(5), /* まいにち配信 */
     .stHtml .dataframe th:nth-child(9), .stHtml .dataframe td:nth-child(9) { /* ポイント */
-        text-align: right !important; /* 強制右寄せ */
+        text-align: center !important; /* 中央右寄せ */
         width: 10%; 
     }
 
