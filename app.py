@@ -413,9 +413,8 @@ def display_room_status(profile_data, input_room_id):
             point = event_info["point"]
             level = event_info["level"]
             
-            # ここで取得したレベル情報も、APIに値があれば正しく表示されるはず
-            st.markdown("#### 参加状況（自己ルーム）")
             # イベント参加情報表示 (4カラムで横並び) - st.metric を使用
+            st.markdown("#### 参加状況（自己ルーム）")
             event_col_data1, event_col_data2, event_col_data3, event_col_data4 = st.columns([1, 1, 1, 1])
             with event_col_data1:
                 st.metric(label="参加ルーム数", value=f"{total_entries:,}" if isinstance(total_entries, int) else str(total_entries), delta_color="off")
@@ -520,19 +519,23 @@ def display_room_status(profile_data, input_room_id):
                     dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=False))
             
 
-            # 🔥 修正の核心: 「レベル」列を明示的に数値に変換し、NaNと有効値を区別して整形する
-            # 他の列のフォーマットに依存せず、この列の表示を確実にする
+            # 🔥 修正の核心: 「レベル」列のフォーマット処理を独立させ、確実な数値表示を保証
             if 'レベル' in dfp_display.columns:
-                # 1. 強制的に数値に変換 (変換できない値や欠損は NaN になる)
-                dfp_display['レベル'] = pd.to_numeric(dfp_display['レベル'], errors='coerce')
                 
                 # 2. NaNと有効値を判定して整形する専用関数
                 def format_level_safely_final(val):
-                    if pd.isna(val):
-                        # 項目が無い場合、ハイフンを返す
+                    """APIの値(val)を安全にレベル表示用文字列に変換する"""
+                    try:
+                        # None, NaN, 空文字列の場合にハイフン "-" を返す
+                        if val is None or (isinstance(val, (str, float)) and (str(val).strip() == "" or pd.isna(val))):
+                            return "-"
+                        
+                        # 有効な数値（0や2など）は必ず整数文字列に変換して返す
+                        return str(int(val))
+
+                    except (ValueError, TypeError):
+                        # 数値変換できなかった場合は、データがないとみなしハイフンを返す
                         return "-"
-                    # 有効な数値（0や2など）は必ず整数文字列に変換して返す
-                    return str(int(val))
 
                 dfp_display['レベル'] = dfp_display['レベル'].apply(format_level_safely_final)
             
