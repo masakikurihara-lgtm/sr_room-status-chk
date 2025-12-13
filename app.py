@@ -313,39 +313,56 @@ def display_room_status(profile_data, input_room_id):
                 elif col in ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位']:
                     # その他数値はカンマ区切りなし（コンパクト表示のため）
                     dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=False))
-
+                
             # ルーム名をリンクにしてテーブル表示
             def _make_link(row):
                 rid = row['ルームID']
-                name = row['ルーム名'] or f"room_{rid}"
+                # ルーム名の前後のスペースや改行を削除し、Noneの場合は代替テキストを使用
+                name = str(row['ルーム名']).strip() if row['ルーム名'] else f"room_{rid}"
+                # URLエンコードの必要はありませんが、リンクとして確実にする
                 return f'<a href="https://www.showroom-live.com/room/profile?room_id={rid}" target="_blank">{name}</a>'
 
-            dfp_display['ルーム名'] = dfp_display.apply(_make_link, axis=1)
+            dfp_display['ルーム名_link'] = dfp_display.apply(_make_link, axis=1)
 
-            # ルームIDカラムは表示上不要なため削除
-            dfp_display = dfp_display.drop(columns=['ルームID'])
+            # ルーム名（リンク）を元の列に置き換え、ルームIDを削除
+            dfp_display = dfp_display.drop(columns=['ルーム名', 'ルームID'])
+            dfp_display.rename(columns={'ルーム名_link': 'ルーム名'}, inplace=True)
+            
+            # 列順を最終的に整える
+            cols_order = ['ルーム名', 'ルームレベル', 'SHOWランク', 'フォロワー数',
+                          'まいにち配信', '公/フ', '順位', 'ポイント']
+            dfp_display = dfp_display[cols_order]
 
             # コンパクトに expander 内で表示
             with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
-                # HTML表示時にテーブルの横幅を確保するための簡単なスタイルを追加
+                # HTML表示時のスタイル調整
                 style = """
                 <style>
+                /* テーブル全体の幅を確保 */
                 .data-table-full-width {
                     width: 100%;
                 }
+                /* セルのスタイルをコンパクトに */
                 .data-table th, .data-table td {
-                    white-space: nowrap; /* テキストの折り返し防止 */
-                    font-size: 13px;
-                    padding: 4px 6px;
+                    white-space: nowrap; /* テキストの折り返しを強制的に防ぐ */
+                    font-size: 12px; /* フォントサイズを小さく */
+                    padding: 4px 6px; /* パディングを調整 */
                     text-align: left;
                 }
+                /* ヘッダーの幅を調整（特にルーム名を柔軟に） */
+                .data-table th:nth-child(1) { width: 30%; } /* ルーム名 */
+                .data-table th:nth-child(2),
+                .data-table th:nth-child(3) { width: 10%; } /* レベル/ランク */
+                .data-table th:nth-child(6) { width: 5%; } /* 公/フ */
                 </style>
                 """
+                
+                # to_htmlでHTMLタグが混入したルーム名列を正しくエスケープせずに表示させる
                 html_table = dfp_display.to_html(
                     escape=False, 
                     index=False, 
                     justify='left', 
-                    classes='data-table data-table-full-width' # カスタムクラス
+                    classes='data-table data-table-full-width'
                 )
                 
                 st.markdown(style + html_table, unsafe_allow_html=True)
