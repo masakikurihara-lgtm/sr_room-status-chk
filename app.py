@@ -362,7 +362,6 @@ def display_room_status(profile_data, input_room_id):
     /* HTMLテーブルのスタイル */
     .stHtml .dataframe {
         border-collapse: collapse;
-        text-align: center; /* 念のため残す */
         margin-top: 10px; 
         width: 100%; 
         max-width: 1000px; 
@@ -378,22 +377,13 @@ def display_room_status(profile_data, input_room_id):
     }
 
     /*
-    🔥 最終強化: すべての th と td の text-align を強制的に center に設定
-    Pandas/Streamlitがインラインで 'text-align: right;' や 'text-align: left;' を適用している場合、
-    この !important で上書きします。
+    🔥🔥 最強の修正: すべての th と td の text-align を強制的に center に設定
+    PandasやStreamlitがインラインスタイルを適用した場合でも、この!importantで上書きします。
     */
-    .stHtml .dataframe th, 
-    .stHtml .dataframe td {
+    .stHtml table.dataframe th, 
+    .stHtml table.dataframe td {
         text-align: center !important; 
-    }
-    
-    /* ルーム名セル (1列目) のリンクを含むコンテンツを中央寄せにするための追加ルール */
-    /* td要素が text-align: center でも、内部の a 要素がインライン要素のため中央に配置されないことがあるため、
-       td要素全体を中央寄せにし、かつその内容が中央に配置されるようにする */
-    .stHtml .dataframe td:nth-child(1) {
-        text-align: center !important; 
-        /* 内部のリンクも中央に配置されるように display を調整する必要がある場合がありますが、
-           tdにtext-align: center !important; があれば、通常はコンテンツ全体が中央に配置されます。 */
+        /* !importantの優先度を上げるため、セレクタもtable.dataframeで指定 */
     }
     
     /* ヘッダーセルの共通スタイル */
@@ -720,13 +710,16 @@ def display_room_status(profile_data, input_room_id):
             # コンパクトに expander 内で表示
             with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
                 
-                # Pandasのオプション設定は削除済み
-                
-                html_table = dfp_display.to_html(
-                    escape=False, 
-                    index=False, 
-                    classes='dataframe data-table data-table-full-width' 
-                )
+                # 🔥 ここに Pandasa の表示オプションを一時的に変更する処理を追加
+                # PandasがHTML出力時に数値列にインラインで右寄せスタイルを埋め込むのを防ぐため
+                # 一時的に全ての列（文字列、数値）のデフォルトのHTMLアラインメントを 'center' に設定
+                with pd.option_context('display.html.table_schema', False, 'display.html.use_mathjax', False, 'display.html.table_schema_all_string', True, 'display.colheader_justify', 'center'):
+                    html_table = dfp_display.to_html(
+                        escape=False, 
+                        index=False, 
+                        classes='dataframe data-table data-table-full-width' 
+                    )
+                # オプション変更のブロックここまで
                 
                 # HTMLを整形（改行や余分な空白を除去し、HTMLのサイズを小さくする）
                 html_table = html_table.replace('\n', '')
