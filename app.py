@@ -7,8 +7,7 @@ from dateutil import parser
 import numpy as np
 
 # Streamlit の初期設定
-# 環境依存のエラー (StreamlitInvalidPageLayoutError) を避けるため、
-# set_page_configの引数を最小限にしました。（前回修正から変更なし）
+# 環境依存のエラーを避けるため、set_page_configの引数を最小限にしました。
 st.set_page_config(
     page_title="SHOWROOM ルームステータス可視化ツール"
 )
@@ -16,7 +15,11 @@ st.set_page_config(
 # --- 定数設定 ---
 ROOM_LIST_URL = "https://mksoul-pro.com/showroom/file/room_list.csv"
 ROOM_PROFILE_API = "https://www.showroom-live.com/api/room/profile?room_id={room_id}"
-EVENT_ROOM_LIST_API = "https://www.showroom-live.com/api/event/room_list?event_id={event_id}&p={page}"
+
+# ご提示のロジックに合わせてAPI URLとヘッダーを定義
+API_EVENT_ROOM_LIST_URL = "https://www.showroom-live.com/api/event/room_list" # ページングなしのベースURL
+# ヘッダーは通常、APIから情報を取得する際は不要ですが、念のため空の辞書を定義
+HEADERS = {} 
 
 GENRE_MAP = {
     112: "ミュージック", 102: "アイドル", 103: "タレント", 104: "声優",
@@ -62,59 +65,73 @@ def get_room_profile(room_id):
     except requests.exceptions.RequestException:
         return None
 
+# --- ▼ ご提示のロジックを組み込んだ関数 ▼ ---
+def get_total_entries(event_id):
+    """
+    指定されたイベントの総参加ルーム数を取得します。
+    """
+    params = {"event_id": event_id}
+    try:
+        response = requests.get(API_EVENT_ROOM_LIST_URL, headers=HEADERS, params=params, timeout=10)
+        # 404エラーは参加者情報がない場合なので正常系として扱う
+        if response.status_code == 404:
+            return 0
+        response.raise_for_status()
+        data = response.json()
+        # 'total_entries' キーから参加ルーム数を取得
+        return data.get('total_entries', 0)
+    except requests.exceptions.RequestException:
+        return "N/A"
+    except ValueError:
+        return "N/A"
+
+
+def get_event_room_list_data(event_id):
+    """ /api/event/room_list?event_id= を叩いて参加ルーム一覧（主に上位30）を取得する """
+    params = {"event_id": event_id}
+    try:
+        resp = requests.get(API_EVENT_ROOM_LIST_URL, headers=HEADERS, params=params, timeout=10)
+        
+        # 404エラーの場合は空リストを返す
+        if resp.status_code == 404:
+            return []
+            
+        resp.raise_for_status()
+        data = resp.json()
+        
+        # キー名が環境で異なるので複数のキーをチェック
+        if isinstance(data, dict):
+            for k in ('list', 'room_list', 'event_entry_list', 'entries', 'data', 'event_list'):
+                if k in data and isinstance(data[k], list):
+                    return data[k]
+        if isinstance(data, list):
+            return data
+            
+    except Exception:
+        # 何か失敗したら空リストを返す（呼び出し側で扱いやすくするため）
+        return []
+        
+    return []
+
 def get_event_participants_info(event_id, target_room_id, limit=10):
     """
-    イベント参加ルーム情報・状況APIから必要な情報を抽出する。
-    ターゲットルームが見つかるまでページングを試行するロジックに修正。
+    イベント参加ルーム情報・状況APIから必要な情報を抽出する。（この関数で総参加者数とランキングデータを統合）
     """
     if not event_id:
         return {"total_entries": "-", "rank": "-", "point": "-", "level": "-", "top_participants": []}
 
-    participants_data = []
-    page = 1
-    total_entries = 0
+    # 1. 総参加者数を取得
+    total_entries = get_total_entries(event_id)
+    
+    # 2. 上位ルームリスト（1ページ目）を取得
+    room_list_data = get_event_room_list_data(event_id)
+    
     current_room_data = None
-    max_pages_to_check = 10 # 過剰なリクエストを避けるための安全な上限
-
-    # ターゲットルームが見つかるか、ページが尽きるまでループを継続
-    while current_room_data is None and page <= max_pages_to_check: 
-        url = EVENT_ROOM_LIST_API.format(event_id=event_id, page=page)
-        try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-
-            # APIレスポンスに 'room_list' がない、またはリストが空の場合
-            if "room_list" not in data or not isinstance(data["room_list"], list) or not data["room_list"]:
-                break
-            
-            # total_entriesは1ページ目で取得
-            if page == 1:
-                total_entries = data.get("total_entries", 0)
-
-            # ターゲットルームの情報を探す
-            for room in data["room_list"]:
-                if str(room.get("room_id")) == str(target_room_id):
-                    current_room_data = room
-            
-            # 1ページ目のデータは常に上位10ルームの候補として保持
-            if page == 1:
-                participants_data.extend(data["room_list"])
-            
-            # 次のページに進む判定
-            # next_pageがnullでないか、total_entriesからまだページがあると推測できる場合
-            # ただし、確実なのは next_page キーの存在確認だが、StreamlitのAPIは単純なページ遷移しか提供しないことが多い
-            # ここではAPIの next_page キーに頼る
-            if data.get("next_page") is not None:
-                page += 1
-            else:
-                break # 次のページへのリンクがない場合は終了
-
-        except requests.exceptions.RequestException:
-            # API呼び出しでエラーが発生した場合
-            break
-        except Exception:
-            # その他の予期せぬエラー (JSONデコード失敗など)
+    
+    # ターゲットルームの情報をリストから探す
+    for room in room_list_data:
+        if str(room.get("room_id")) == str(target_room_id):
+            current_room_data = room
             break
 
     # ターゲットルームの情報を設定 (APIからNoneが返された場合に"-"を確実に設定)
@@ -122,11 +139,10 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     point = _safe_get(current_room_data, ["point"], "-")
     level = _safe_get(current_room_data, ["quest_level"], "-")
 
-    # 上位10ルームをポイント順にソートして抽出
-    top_participants = participants_data
+    # 上位10ルームをポイント順にソートして抽出（room_list_dataは既に上位データ）
+    top_participants = room_list_data
     if top_participants:
         # ポイントでソート (pointがない/None/無効な値の場合は0として扱う)
-        # int()での型変換が失敗しないよう、より安全に処理
         top_participants.sort(key=lambda x: int(str(x.get('point', 0) or 0)), reverse=True)
     
     # 上限10ルームに制限
@@ -134,12 +150,13 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
 
 
     return {
-        "total_entries": total_entries if total_entries > 0 else "-",
+        "total_entries": total_entries if isinstance(total_entries, int) and total_entries > 0 else "-",
         "rank": rank,
         "point": point,
         "level": level,
         "top_participants": top_participants
     }
+# --- ▲ ご提示のロジックを組み込んだ関数 ▲ ---
 
 
 def display_room_status(profile_data, input_room_id):
@@ -281,9 +298,10 @@ def display_room_status(profile_data, input_room_id):
                     # Noneや空文字列、NaNをハイフンに
                     if v is None or (isinstance(v, (str, float)) and (v == "" or pd.isna(v))):
                         return "-"
+                    # 数値への変換を試みる
                     num = int(v)
                     return f"{num:,}" if use_comma else f"{num}"
-                except Exception:
+                except (ValueError, TypeError):
                     # int()変換に失敗した場合はそのまま文字列として返す
                     return str(v)
 
@@ -309,7 +327,28 @@ def display_room_status(profile_data, input_room_id):
 
             # コンパクトに expander 内で表示
             with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
-                st.write(dfp_display.to_html(escape=False, index=False, justify='left', classes='streamlit-table-full-width'), unsafe_allow_html=True)
+                # HTML表示時にテーブルの横幅を確保するための簡単なスタイルを追加
+                style = """
+                <style>
+                .data-table-full-width {
+                    width: 100%;
+                }
+                .data-table th, .data-table td {
+                    white-space: nowrap; /* テキストの折り返し防止 */
+                    font-size: 13px;
+                    padding: 4px 6px;
+                    text-align: left;
+                }
+                </style>
+                """
+                html_table = dfp_display.to_html(
+                    escape=False, 
+                    index=False, 
+                    justify='left', 
+                    classes='data-table data-table-full-width' # カスタムクラス
+                )
+                
+                st.markdown(style + html_table, unsafe_allow_html=True)
         else:
             st.info("参加ルーム情報が取得できませんでした（ランキングイベントではない、またはデータがまだありません）。")
 
