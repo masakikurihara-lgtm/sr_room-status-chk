@@ -37,7 +37,7 @@ def _safe_get(data, keys, default_value=None):
         else:
             return default_value
     if temp is None or (isinstance(temp, (str, float)) and pd.isna(temp)):
-        return default_value
+            return default_value
     return temp
 
 def get_official_mark(room_id):
@@ -267,29 +267,27 @@ def display_room_status(profile_data, input_room_id):
     .stHtml .dataframe {
         border-collapse: collapse;
         margin-top: 10px; 
-        /* 中央寄せを試みるための指定 (幅を制限し、マージンをオートに) */
-        max-width: 1200px; /* 必要に応じて調整 */
-        margin-left: auto !important;
-        margin-right: auto !important;
-        width: 100%;
-        min-width: 800px; 
+        /* 強制センタリングのため、幅を最大化しないようにする */
+        width: 100%; /* 親要素の幅を使う */
+        max-width: 1000px; /* テーブルの最大幅を制限 (調整可能) */
+        min-width: 800px; /* 最小幅を設定 */
     }
     
-    /* テーブルを囲む要素のセンタリング */
-    .stHtml > div {
+    /* 🔥 最終修正: テーブルを囲むカスタムラッパーのスタイル (Flexboxで子要素を中央寄せ) */
+    .center-table-wrapper {
         display: flex;
-        justify-content: center;
+        justify-content: center; /* 子要素（テーブル）を水平方向の中央に配置 */
         width: 100%;
-        overflow-x: auto;
+        overflow-x: auto; /* テーブルが画面幅を超える場合にスクロール可能にする */
     }
-    
+
     .stHtml .dataframe th {
         background-color: #e8eaf6; 
         color: #1a237e; 
         font-weight: bold;
         padding: 8px 10px; 
         font-size: 14px;
-        text-align: center; /* ヘッダーは中央寄せを維持 */
+        text-align: center; 
         border-bottom: 2px solid #c5cae9; 
         white-space: nowrap;
     }
@@ -582,9 +580,13 @@ def display_room_status(profile_data, input_room_id):
                 html_table = html_table.replace('\n', '')
                 html_table = re.sub(r'>\s+<', '><', html_table)
 
+                # 🔥 修正④: カスタムdivラッパーでテーブルをFlexboxセンタリング
+                # テーブル全体を 'center-table-wrapper' でラップする
+                centered_html = f'<div class="center-table-wrapper">{html_table}</div>'
+
                 # HTMLテーブルを直接 st.markdown で出力
-                # これにより、上記のCSS指定がより直接的にテーブルに適用されます。
-                st.markdown(html_table, unsafe_allow_html=True)
+                st.markdown(centered_html, unsafe_allow_html=True)
+
         else:
             st.info("参加ルーム情報が取得できませんでした（ランキングイベントではない、またはデータがまだありません）。")
 
