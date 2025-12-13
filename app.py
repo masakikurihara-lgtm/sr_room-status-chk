@@ -5,6 +5,7 @@ import io
 import datetime
 from dateutil import parser
 import numpy as np
+import re # ✅ HTML出力の安定化のため追加
 
 # Streamlit の初期設定
 st.set_page_config(
@@ -61,7 +62,7 @@ def get_room_profile(room_id):
     except requests.exceptions.RequestException:
         return None
 
-# --- イベント情報取得関数群 (前回のロジック維持) ---
+# --- イベント情報取得関数群 ---
 
 def get_total_entries(event_id):
     """
@@ -114,6 +115,7 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     room_list_data = get_event_room_list_data(event_id)
     current_room_data = None
     
+    # ターゲットルームの情報をリストから探す
     for room in room_list_data:
         if str(room.get("room_id")) == str(target_room_id):
             current_room_data = room
@@ -124,7 +126,9 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     level = _safe_get(current_room_data, ["quest_level"], "-")
 
     top_participants = room_list_data
+    # ✅ 要件: ポイントの高い順にソート (get_event_room_list_dataはAPIの順番なので、ここでソートを保証)
     if top_participants:
+        # ポイントでソート (pointがない/None/無効な値の場合は0として扱う)
         top_participants.sort(key=lambda x: int(str(x.get('point', 0) or 0)), reverse=True)
     
     top_participants = top_participants[:limit]
@@ -239,10 +243,11 @@ def display_room_status(profile_data, input_room_id):
 
         st.divider()
 
-        # --- 🔝 参加イベント上位10ルーム（Streamlitネイティブ表示） ---
+        # --- 🔝 参加イベント上位10ルーム（HTMLテーブル強制修正） ---
         st.markdown("### 🔝 参加イベント上位10ルーム")
         
         if top_participants:
+            # ✅ ここから、ユーザー様の提示された仕様に合わせます。
             dfp = pd.DataFrame(top_participants)
             
             # 必要なカラムが全て存在するように初期化
@@ -252,51 +257,146 @@ def display_room_status(profile_data, input_room_id):
             ]
             for c in cols:
                 if c not in dfp.columns:
-                    dfp[c] = None
+                    # Noneではなく空文字列を使用し、後続の処理でエラーを回避
+                    dfp[c] = ""
 
             dfp_display = dfp[cols].copy()
 
             # ▼ rename
             dfp_display.rename(columns={
-                'room_name': 'ルーム名', 'room_level': 'Lv', 'show_rank_subdivided': 'ランク',
-                'follower_num': 'Fw数', 'live_continuous_days': 'まいにち', 'room_id': 'ID',
-                'rank': '順位', 'point': 'P'
+                'room_name': 'ルーム名', 
+                'room_level': 'ルームレベル', 
+                'show_rank_subdivided': 'SHOWランク',
+                'follower_num': 'フォロワー数', 
+                'live_continuous_days': 'まいにち配信', 
+                'room_id': 'ルームID',
+                'rank': '順位', 
+                'point': 'ポイント'
             }, inplace=True)
 
             # ▼ 公/フ を追加
-            dfp_display["公/フ"] = dfp_display["ID"].apply(get_official_mark)
+            dfp_display["公/フ"] = dfp_display["ルームID"].apply(get_official_mark)
 
-            # ▼ 表示列順を整える (コンパクト表示)
+            # ▼ 列順をここで整える（仕様通り）
             dfp_display = dfp_display[
-                ['順位', 'P', 'ルーム名', 'ID', 'Lv', 'ランク', 'Fw数', 'まいにち', '公/フ']
+                ['ルーム名', 'ルームレベル', 'SHOWランク', 'フォロワー数',
+                 'まいにち配信', '公/フ', '順位', 'ポイント'] # ルームIDはリンク作成後に不要なため除外
             ]
 
-            # --- ▼ 数値フォーマット関数 ▼ ---
+            # --- ▼ 数値フォーマット関数（カンマ区切りを切替可能） ▼ ---
             def _fmt_int_for_display(v, use_comma=True):
                 try:
-                    if v is None or (isinstance(v, (str, float)) and (v == "" or pd.isna(v))):
-                        return "-"
-                    num = int(v)
-                    return f"{num:,}" if use_comma else f"{num}"
-                except (ValueError, TypeError):
+                    # Noneや空文字列、NaNを空文字に
+                    if v is None or (isinstance(v, (str, float)) and (str(v).strip() == "" or pd.isna(v))):
+                        return ""
+                    
+                    num = float(v)
+                    # ✅ カンマ区切りあり or なしを切り替え
+                    return f"{int(num):,}" if use_comma else f"{int(num)}"
+                except Exception:
                     return str(v)
 
-            # --- ▼ 列ごとにフォーマット適用 ▼ ---
-            for col in ['Lv', 'Fw数', 'まいにち', '順位']:
-                dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=False))
-            dfp_display['P'] = dfp_display['P'].apply(lambda x: _fmt_int_for_display(x, use_comma=True))
-            
-            # ルーム名がNoneやNaNの場合は空文字列に変換
-            dfp_display['ルーム名'] = dfp_display['ルーム名'].fillna('')
-            dfp_display['ランク'] = dfp_display['ランク'].fillna('-')
-            
-            # Streamlitのネイティブなデータフレーム表示を使用
-            with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
-                # HTMLの崩れを回避するため、st.dataframe()を使用
-                st.dataframe(dfp_display, 
-                             hide_index=True, 
-                             use_container_width=True) # 縦型考慮のため幅いっぱいに使用
+            # --- ▼ 列ごとにフォーマット適用（確実に順序反映） ▼ ---
+            # ルームID列はリンク作成に使うため、ここで除外
+            format_cols = ['ルームレベル', 'SHOWランク', 'フォロワー数', 'まいにち配信', '順位', 'ポイント']
 
+            for col in format_cols:
+                # 'ポイント'はカンマ区切りあり
+                if col == 'ポイント':
+                    dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=True))
+
+                # その他数値はカンマ区切りなし
+                elif col in ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位']:
+                    dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=False))
+            
+            # SHOWランクなど文字列/Noneの列のNaN/Noneをハイフンに
+            dfp_display['SHOWランク'] = dfp_display['SHOWランク'].fillna('-')
+            dfp_display['ルームレベル'] = dfp_display['ルームレベル'].fillna('')
+
+
+            # ルーム名をリンクにしてテーブル表示（HTMLテーブルを利用）
+            def _make_link(row):
+                # dfpからroom_idを取得
+                rid = row['room_id']
+                # dfp_displayの'ルーム名'（元のroom_name）から名前を取得
+                name = row['room_name']
+                
+                if not name:
+                    name = f"room_{rid}"
+                
+                # ✅ target="_blank"で別窓リンクを実現
+                return f'<a href="https://www.showroom-live.com/room/profile?room_id={rid}" target="_blank">{name}</a>'
+            
+            # ルーム名列をリンクに置き換える（dfp_displayを修正）
+            # dfpはroom_idを持つ元のDataFrame
+            # 結合キーとしてroom_idを使用し、dfp_displayに一時的にroom_idをマージ
+            
+            # --- ✅ リンク生成の修正 ---
+            # dfp_displayはすでにcolsから作られており、ルームIDがないため、
+            # dfp_displayにdfpのroom_idを追加し、それを使ってリンクを生成する。
+            
+            # dfp_tempにdfp_displayのデータとdfpのroom_idを結合してリンクを生成
+            dfp_temp = dfp_display.copy()
+            # 既存のdfp_displayにroom_id列を追加する作業をここで調整
+            dfp_temp.insert(0, 'room_id_for_link', dfp['room_id'].astype(str))
+            
+            # リンクテキストとして元のルーム名を使用
+            dfp_temp['room_name_for_link'] = dfp['room_name'].fillna('')
+            
+            def _make_link_final(row):
+                rid = row['room_id_for_link']
+                name = row['room_name_for_link']
+                if not name:
+                    name = f"room_{rid}"
+                return f'<a href="https://www.showroom-live.com/room/profile?room_id={rid}" target="_blank">{name}</a>'
+
+            # リンクを生成し、dfp_displayの'ルーム名'列を上書き
+            dfp_display['ルーム名'] = dfp_temp.apply(_make_link_final, axis=1)
+
+            # dfp_displayの列順を最終確認
+            # ルームIDは最終出力に不要なため、意図的に除外済み
+            
+            # コンパクトに expander 内で表示
+            with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
+                # HTMLの崩れを強制的に修正するカスタムCSS
+                style = """
+                <style>
+                /* Streamlitの内部クラス名に基づくカスタマイズ */
+                .stHtml .dataframe th, .stHtml .dataframe td {
+                    padding: 4px 6px; /* パディング調整 */
+                    font-size: 13px; /* フォントサイズ調整 */
+                    line-height: 1.2;
+                    /* ✅ 折り返しを強制的に防ぎ、列崩れを防止する最重要設定 */
+                    white-space: nowrap !important; 
+                }
+                .stHtml .dataframe {
+                    width: 100%; /* テーブルの幅を確保 */
+                }
+                /* ルーム名のセル幅を柔軟に */
+                .stHtml .dataframe th:nth-child(1), .stHtml .dataframe td:nth-child(1) {
+                    min-width: 150px; /* ルーム名のための最小幅を確保 */
+                    white-space: normal !important; /* ルーム名のみ折り返しを許可 (長すぎる場合) */
+                }
+                .stHtml .dataframe th:nth-child(8), .stHtml .dataframe td:nth-child(8) {
+                    text-align: right !important; /* ポイントを右寄せ */
+                }
+                </style>
+                """
+                
+                # to_htmlでHTMLタグが混入したルーム名列を正しくエスケープせずに表示させる
+                html_table = dfp_display.to_html(
+                    escape=False, 
+                    index=False, 
+                    justify='left', 
+                    classes='dataframe data-table data-table-full-width' # Streamlitのデフォルトクラス名を含む
+                )
+                
+                # ✅ 不要な改行を削除し、HTML出力を安定化させる
+                html_table = html_table.replace('\n', '')
+                html_table = re.sub(r'>\s+<', '><', html_table)
+
+                # カスタムCSSとHTMLテーブルを一緒に表示
+                st.markdown(style + html_table, unsafe_allow_html=True)
         else:
             st.info("参加ルーム情報が取得できませんでした（ランキングイベントではない、またはデータがまだありません）。")
 
