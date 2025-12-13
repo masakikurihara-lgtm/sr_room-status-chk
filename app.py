@@ -35,8 +35,10 @@ def _safe_get(data, keys, default_value=None):
             temp = temp.get(key)
         else:
             return default_value
-    if temp is None or (isinstance(temp, (str, float)) and pd.isna(temp)):
+    # 欠損値判定を厳密化
+    if temp is None or (isinstance(temp, (str, float)) and pd.isna(temp) and not (isinstance(temp, str) and str(temp).isdigit())):
         return default_value
+    # 数値0がNone扱いされないように修正（ただしAPIから取得するデータ型に依存するため、後段のPandasで確実に対応）
     return temp
 
 # 🚨 この関数はルームIDの数値範囲による簡易判定（今回の「公/フ」表示では使用しない）
@@ -487,6 +489,7 @@ def display_room_status(profile_data, input_room_id):
                 try:
                     # None, NaN, 空文字列の場合にハイフン "-" を返す
                     if v is None or (isinstance(v, (str, float)) and (str(v).strip() == "" or pd.isna(v))):
+                        # ここで空文字列やNoneを拾う
                         return "-"
                     
                     # 有効な数値（0を含む）はここで処理
@@ -498,12 +501,12 @@ def display_room_status(profile_data, input_room_id):
                         return f"{int(num)}"
                         
                 except Exception:
-                    # 数値変換できなかった場合は文字列として返す
+                    # 数値変換できなかった場合は文字列として返す（例：ランク 'A' など）
                     return str(v)
 
             # --- ▼ 列ごとにフォーマット適用 ▼ ---
-            # 🔥 レベルをここから削除し、個別処理する
-            format_cols_no_comma = ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位'] 
+            # 'レベル' を含め、カンマ区切り不要な列を適用
+            format_cols_no_comma = ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位', 'レベル'] 
             format_cols_comma = ['ポイント']
 
             for col in format_cols_comma:
@@ -515,28 +518,12 @@ def display_room_status(profile_data, input_room_id):
                     dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=False))
             
 
-            # 🔥 修正の核心: 「レベル」列を明示的に数値に変換し、NaNと有効値を区別して整形する
-            if 'レベル' in dfp_display.columns:
-                # 1. 強制的に数値に変換 (変換できない値は NaN になる)
-                dfp_display['レベル'] = pd.to_numeric(dfp_display['レベル'], errors='coerce')
-                
-                # 2. NaNと数値を判定して整形する関数
-                def format_level_safely(val):
-                    if pd.isna(val):
-                        # 項目が無い場合、ハイフンを返す
-                        return "-"
-                    if isinstance(val, (int, float)):
-                        # 有効な数値（0や2など）は整数文字列に変換して返す
-                        return str(int(val))
-                    return str(val)
+            # 🔥 最終確認: _fmt_int_for_displayを通過しても残ってしまった空文字列や欠損値をここで確実にハイフンに変換する
+            for col in ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位', 'レベル', 'ランク', '公/フ']:
+                if col in dfp_display.columns:
+                    # _fmt_int_for_displayが'-'を返さない不正な空文字を処理
+                    dfp_display[col] = dfp_display[col].apply(lambda x: '-' if x == '' or pd.isna(x) else x)
 
-                dfp_display['レベル'] = dfp_display['レベル'].apply(format_level_safely)
-
-
-            # SHOWランクなど文字列/Noneの列のNaN/Noneをハイフンに
-            dfp_display['ランク'] = dfp_display['ランク'].fillna('-')
-            # 他の列も_fmt_int_for_displayで処理されているため、ここでfillnaは不要
-            
 
             # --- ルーム名をリンクに置き換える ---
             def _make_link_final(row):
