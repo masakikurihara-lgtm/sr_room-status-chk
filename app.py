@@ -10,7 +10,80 @@ import re
 # Streamlit の初期設定
 st.set_page_config(
     page_title="SHOWROOM ルームステータス可視化ツール"
+    layout="wide"
 )
+
+# ===============================
+# 📱 共通レスポンシブCSS（スマホ／タブレット対応）
+# ===============================
+st.markdown("""
+<style>
+/* ---------- テーブル共通 ---------- */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+/* ---------- ボタンリンク ---------- */
+.rank-btn-link {
+    background: #0b57d0;
+    color: white !important;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 12px;
+}
+.rank-btn-link:hover {
+    background: #0949a8;
+}
+
+/* ---------- 横スクロール対応 ---------- */
+.table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    width: 100%;
+}
+
+/*
+.room-name-ellipsis {
+    max-width: 250px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline-block;
+}
+*/
+
+/* ---------- スマホ・タブレット対応 ---------- */
+@media screen and (max-width: 1024px) {
+    table {
+        font-size: 12px !important;
+    }
+    th, td {
+        padding: 6px !important;
+    }
+    .rank-btn-link {
+        padding: 6px 8px !important;
+        font-size: 13px !important;
+    }
+    .table-wrapper {
+        overflow-x: auto !important;
+        display: block !important;
+    }
+    /* 固定幅で横スクロール可能にする */
+    .table-wrapper table {
+        width: 1080px !important;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+
 
 # --- 定数設定 ---
 ROOM_LIST_URL = "https://mksoul-pro.com/showroom/file/room_list.csv"
