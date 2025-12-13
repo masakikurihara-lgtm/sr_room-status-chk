@@ -241,7 +241,6 @@ def display_room_status(profile_data, input_room_id):
     .custom-metric-container {
         margin-bottom: 15px; 
         padding: 5px 0;
-        /* 修正①: 左側の赤線ボーダー（border-left）と関連パディングを削除済み */
     }
     .metric-label {
         font-size: 14px; 
@@ -269,7 +268,7 @@ def display_room_status(profile_data, input_room_id):
     /* HTMLテーブルのスタイル */
     .stHtml .dataframe {
         width: 100%; 
-        /* 修正: min-width固定値を削除済み */
+        /* min-width固定値なし */
         border-collapse: collapse;
         margin-top: 10px; 
     }
@@ -294,7 +293,7 @@ def display_room_status(profile_data, input_room_id):
         background-color: #f7f9fd; 
     }
 
-    /* 🔥 列ごとの配置調整 (レベルを末尾に移動したため、nth-child(8)と(9)のコメントを更新) */
+    /* 列ごとの配置調整 (レベルが末尾に来るように調整) */
     /* 数値系の列をすべて右寄せに統一 */
     .stHtml .dataframe th:nth-child(2), .stHtml .dataframe td:nth-child(2), /* ルームレベル */
     .stHtml .dataframe th:nth-child(4), .stHtml .dataframe td:nth-child(4), /* フォロワー数 */
@@ -452,14 +451,14 @@ def display_room_status(profile_data, input_room_id):
             # ▼ rename（ユーザー様の仕様通り）
             dfp_display.rename(columns={
                 'room_name': 'ルーム名', 
-                'room_level': 'ルームレベル', # 修正③: 'Lv'を'ルームレベル'に変更
+                'room_level': 'ルームレベル', 
                 'show_rank_subdivided': 'ランク',
                 'follower_num': 'フォロワー数', 
                 'live_continuous_days': 'まいにち配信', 
                 'rank': '順位', 
                 'point': 'ポイント',
                 'is_official_api': 'is_official_api',
-                'quest_level': 'レベル' # 修正②: レベルを追加
+                'quest_level': 'レベル' 
             }, inplace=True)
 
             # --- ▼ 公/フ 判定関数（API情報使用） ▼ ---
@@ -481,19 +480,30 @@ def display_room_status(profile_data, input_room_id):
 
             # --- ▼ 数値フォーマット関数（カンマ区切りを切替可能） ▼ ---
             def _fmt_int_for_display(v, use_comma=True):
+                """
+                数値を整形する。None, NaN, 空文字列の場合はハイフンを返す。
+                有効な数値の場合は、カンマ区切りを適用するか、そのまま返す。
+                """
                 try:
-                    # Noneや空文字列、NaNを空文字に
+                    # None, NaN, 空文字列の場合にハイフン "-" を返す
                     if v is None or (isinstance(v, (str, float)) and (str(v).strip() == "" or pd.isna(v))):
-                        return ""
+                        return "-"
                     
+                    # 有効な数値（0を含む）はここで処理
                     num = float(v)
-                    # ✅ カンマ区切りあり or なしを切り替え
-                    return f"{int(num):,}" if use_comma else f"{int(num)}"
+                    
+                    if use_comma:
+                        return f"{int(num):,}"
+                    else:
+                        return f"{int(num)}"
+                        
                 except Exception:
+                    # 数値変換できなかった場合は文字列として返す
                     return str(v)
 
             # --- ▼ 列ごとにフォーマット適用 ▼ ---
-            format_cols_no_comma = ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位', 'レベル'] 
+            # 🔥 レベルをここから削除し、個別処理する
+            format_cols_no_comma = ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位'] 
             format_cols_comma = ['ポイント']
 
             for col in format_cols_comma:
@@ -504,9 +514,29 @@ def display_room_status(profile_data, input_room_id):
                 if col in dfp_display.columns:
                     dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=False))
             
+
+            # 🔥 修正の核心: 「レベル」列を明示的に数値に変換し、NaNと有効値を区別して整形する
+            if 'レベル' in dfp_display.columns:
+                # 1. 強制的に数値に変換 (変換できない値は NaN になる)
+                dfp_display['レベル'] = pd.to_numeric(dfp_display['レベル'], errors='coerce')
+                
+                # 2. NaNと数値を判定して整形する関数
+                def format_level_safely(val):
+                    if pd.isna(val):
+                        # 項目が無い場合、ハイフンを返す
+                        return "-"
+                    if isinstance(val, (int, float)):
+                        # 有効な数値（0や2など）は整数文字列に変換して返す
+                        return str(int(val))
+                    return str(val)
+
+                dfp_display['レベル'] = dfp_display['レベル'].apply(format_level_safely)
+
+
             # SHOWランクなど文字列/Noneの列のNaN/Noneをハイフンに
             dfp_display['ランク'] = dfp_display['ランク'].fillna('-')
-            dfp_display['ルームレベル'] = dfp_display['ルームレベル'].fillna('') 
+            # 他の列も_fmt_int_for_displayで処理されているため、ここでfillnaは不要
+            
 
             # --- ルーム名をリンクに置き換える ---
             def _make_link_final(row):
@@ -523,10 +553,10 @@ def display_room_status(profile_data, input_room_id):
             # 不要になった room_id 列を削除
             dfp_display.drop(columns=['room_id'], inplace=True, errors='ignore')
 
-            # ▼ 列順をここで整える（修正: レベルを末尾に移動）
+            # ▼ 列順をここで整える（レベルは末尾）
             dfp_display = dfp_display[
                 ['ルーム名', 'ルームレベル', 'ランク', 'フォロワー数',
-                 'まいにち配信', '公/フ', '順位', 'ポイント', 'レベル'] # 🔥 レベルを末尾に移動
+                 'まいにち配信', '公/フ', '順位', 'ポイント', 'レベル'] 
             ]
 
             # コンパクトに expander 内で表示
