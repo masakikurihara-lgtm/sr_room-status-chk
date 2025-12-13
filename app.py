@@ -373,6 +373,9 @@ def display_room_status(profile_data, input_room_id):
         text-align: center !important;
     }
 
+    .stHtml .dataframe tr {
+        text-align: center !important; 
+    }
     .stHtml .dataframe th {
         background-color: #e8eaf6; 
         color: #1a237e; 
