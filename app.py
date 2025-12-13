@@ -267,18 +267,17 @@ def display_room_status(profile_data, input_room_id):
     .stHtml .dataframe {
         border-collapse: collapse;
         margin-top: 10px; 
-        /* 強制センタリングのため、幅を最大化しないようにする */
         width: 100%; /* 親要素の幅を使う */
         max-width: 1000px; /* テーブルの最大幅を制限 (調整可能) */
         min-width: 800px; /* 最小幅を設定 */
     }
     
-    /* 🔥 最終修正: テーブルを囲むカスタムラッパーのスタイル (Flexboxで子要素を中央寄せ) */
+    /* 中央寄せラッパー (テーブル全体を中央に配置) */
     .center-table-wrapper {
         display: flex;
         justify-content: center; /* 子要素（テーブル）を水平方向の中央に配置 */
         width: 100%;
-        overflow-x: auto; /* テーブルが画面幅を超える場合にスクロール可能にする */
+        overflow-x: auto;
     }
 
     .stHtml .dataframe th {
@@ -287,7 +286,8 @@ def display_room_status(profile_data, input_room_id):
         font-weight: bold;
         padding: 8px 10px; 
         font-size: 14px;
-        text-align: center; 
+        /* ヘッダーのデフォルトは中央寄せを維持 */
+        text-align: center !important; 
         border-bottom: 2px solid #c5cae9; 
         white-space: nowrap;
     }
@@ -296,7 +296,8 @@ def display_room_status(profile_data, input_room_id):
         font-size: 13px; 
         line-height: 1.4;
         border-bottom: 1px solid #f0f0f0;
-        text-align: center; 
+        /* データのデフォルトは中央寄せを維持 */
+        text-align: center !important; 
         white-space: nowrap; 
     }
     .stHtml .dataframe tbody tr:hover {
@@ -307,7 +308,7 @@ def display_room_status(profile_data, input_room_id):
     
     /* 1. ルーム名: 左寄せ */
     .stHtml .dataframe th:nth-child(1), .stHtml .dataframe td:nth-child(1) {
-        text-align: left !important; 
+        text-align: left !important; /* 強制左寄せ */
         min-width: 280px; 
         white-space: normal !important; 
     }
@@ -317,7 +318,7 @@ def display_room_status(profile_data, input_room_id):
     .stHtml .dataframe th:nth-child(4), .stHtml .dataframe td:nth-child(4), /* フォロワー数 */
     .stHtml .dataframe th:nth-child(5), .stHtml .dataframe td:nth-child(5), /* まいにち配信 */
     .stHtml .dataframe th:nth-child(9), .stHtml .dataframe td:nth-child(9) { /* ポイント */
-        text-align: right !important; 
+        text-align: right !important; /* 強制右寄せ */
         width: 10%; 
     }
 
@@ -327,7 +328,7 @@ def display_room_status(profile_data, input_room_id):
     .stHtml .dataframe th:nth-child(7), .stHtml .dataframe td:nth-child(7), /* ルームID */
     .stHtml .dataframe th:nth-child(8), .stHtml .dataframe td:nth-child(8), /* 順位 */
     .stHtml .dataframe th:nth-child(10), .stHtml .dataframe td:nth-child(10) { /* レベル (最終列) */
-        text-align: center !important; 
+        text-align: center !important; /* 強制中央寄せ */
         width: 8%;
     }
     
@@ -580,7 +581,6 @@ def display_room_status(profile_data, input_room_id):
                 html_table = html_table.replace('\n', '')
                 html_table = re.sub(r'>\s+<', '><', html_table)
 
-                # 🔥 修正④: カスタムdivラッパーでテーブルをFlexboxセンタリング
                 # テーブル全体を 'center-table-wrapper' でラップする
                 centered_html = f'<div class="center-table-wrapper">{html_table}</div>'
 
