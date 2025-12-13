@@ -37,8 +37,9 @@ def _safe_get(data, keys, default_value=None):
         else:
             return default_value
     # 取得した値がNone、空の文字列、またはNaNの場合もデフォルト値を返す
+    # ★修正のポイント: ここで「-」にせず、呼び出し元で判定するために default_value が None の場合はそのまま返す
     if temp is None or (isinstance(temp, str) and temp.strip() == "") or (isinstance(temp, float) and pd.isna(temp)):
-            return default_value
+        return default_value
     return temp
 
 def get_official_mark(room_id):
@@ -85,14 +86,13 @@ def get_total_entries(event_id):
 
 def get_event_room_list_data(event_id):
     """
-    🔥 最終修正: ページネーションを、ご指定の 'p' パラメーターで実装し、全参加者リストを取得する。
+    全参加者リストを取得する。
     """
     all_rooms = []
     page = 1 # ページカウンター ('p' パラメーターの値)
     count = 50 # 1ページあたりの取得件数（標準的な値）
     
     while True:
-        # 🚨 修正: 'page' ではなく 'p' を使用
         params = {"event_id": event_id, "p": page, "count": count}
         try:
             # ページごとにAPIをリクエスト
@@ -137,47 +137,51 @@ def get_event_room_list_data(event_id):
 def get_event_participants_info(event_id, target_room_id, limit=10):
     """
     イベント参加ルーム情報・状況APIから必要な情報を抽出する。
-    上位10ルームについては、個別のプロフィールAPIを叩いて詳細情報を統合する。
+    ターゲットルームの順位、ポイント、レベルを確実に取得する。（再々修正ロジック）
     """
+    target_room_id_str = str(target_room_id)
+    
     if not event_id:
         return {"total_entries": "-", "rank": "-", "point": "-", "level": "-", "top_participants": []}
 
-    # 全参加者リストを取得（ページネーション対応済み）
+    # 全参加者リストを取得
     room_list_data = get_event_room_list_data(event_id)
-    total_entries = get_total_entries(event_id) # total_entriesはページネーションに関わらず取得可能
+    total_entries = get_total_entries(event_id)
     current_room_data = None
     
     # --- 🎯 ターゲットルームの情報をリスト全体から確実に探す ---
-    target_room_id_str = str(target_room_id)
     for room in room_list_data:
+        # room_id の比較は文字列型で行う
         if str(room.get("room_id")) == target_room_id_str:
             current_room_data = room
             break
 
-    # --- 🎯 ターゲットルームの参加状況を確定 ---
+    # --- 🎯 ターゲットルームの参加状況を確定 (再々修正ロジック) ---
+    rank = None
+    point = None
+    level = None
+    
     if current_room_data:
-        # 順位: "rank" を使用
-        rank = _safe_get(current_room_data, ["rank"], default_value="-")
+        # 1. 順位: "rank" を取得。APIが存在すれば値（数値または文字列）が取得される。
+        rank = _safe_get(current_room_data, ["rank"], default_value=None)
         
-        # ポイント: "point"、または "score" を試行
+        # 2. ポイント: "point" または "score" を取得。
         point = _safe_get(current_room_data, ["point"], default_value=None)
-        if point is None or point == "-":
-             point = _safe_get(current_room_data, ["score"], default_value="-")
+        if point is None:
+             point = _safe_get(current_room_data, ["score"], default_value=None)
         
-        # レベル: "event_entry" の下の "quest_level" または "entry_level" を試行
+        # 3. レベル: 複数の場所を試行。
         level = _safe_get(current_room_data, ["event_entry", "quest_level"], default_value=None)
-        if level is None or level == "-":
-             level = _safe_get(current_room_data, ["entry_level"], default_value="-")
-        if level is None or level == "-":
-             level = _safe_get(current_room_data, ["event_entry", "level"], default_value="-")
-        if level is None: level = "-" 
-        
-    else:
-        # ターゲットルームがリストに見つからなかった場合
-        rank = "-"
-        point = "-"
-        level = "-"
-        
+        if level is None:
+             level = _safe_get(current_room_data, ["entry_level"], default_value=None)
+        if level is None:
+             level = _safe_get(current_room_data, ["event_entry", "level"], default_value=None)
+    
+    # 取得結果の None を表示用のハイフンに変換
+    # APIから 0 や空でない文字列が取得できていれば、ここで None にはならない。
+    rank = "-" if rank is None else rank
+    point = "-" if point is None else point
+    level = "-" if level is None else level
     # ------------------------------------------------------------------------------------
 
     # --- 上位10ルームのリストを作成し、エンリッチメント処理に進む ---
@@ -496,28 +500,36 @@ def display_room_status(profile_data, input_room_id):
             with event_col_data2:
                 # 順位は確定した値を使用
                 rank_display = str(rank)
-                try:
-                    rank_display = f"{int(rank):,}"
-                except (ValueError, TypeError):
-                    pass
+                # ★修正: ハイフンでなければ数値としてカンマ区切りに変換
+                if rank != '-':
+                    try:
+                        # 整数に変換できるか試す
+                        rank_display = f"{int(rank):,}"
+                    except (ValueError, TypeError):
+                        # 変換できなければ元の文字列表示
+                        pass
                 st.metric(label="現在の順位", value=rank_display, delta_color="off")
 
             with event_col_data3:
                 # 獲得ポイントは確定した値を使用
                 point_display = str(point)
-                try:
-                    point_display = f"{int(point):,}"
-                except (ValueError, TypeError):
-                    pass
+                # ★修正: ハイフンでなければ数値としてカンマ区切りに変換
+                if point != '-':
+                    try:
+                        point_display = f"{int(point):,}"
+                    except (ValueError, TypeError):
+                        pass
                 st.metric(label="獲得ポイント", value=point_display, delta_color="off")
 
             with event_col_data4:
                 # レベルは確定した値を使用
                 level_display = str(level)
-                try:
-                    level_display = f"{int(level):,}"
-                except (ValueError, TypeError):
-                    pass
+                # ★修正: ハイフンでなければ数値としてカンマ区切りに変換
+                if level != '-':
+                    try:
+                        level_display = f"{int(level):,}"
+                    except (ValueError, TypeError):
+                        pass
                 st.metric(label="レベル", value=level_display, delta_color="off")
             
             top_participants = event_info["top_participants"]
@@ -579,13 +591,14 @@ def display_room_status(profile_data, input_room_id):
             # --- ▼ 数値フォーマット関数（カンマ区切りを切替可能） ▼ ---
             def _fmt_int_for_display(v, use_comma=True):
                 """
-                数値を整形する。None, NaN, 空文字列の場合はハイフンを返す。
+                数値を整形する。None, NaN, 空文字列、ハイフン以外の '-' の場合はハイフンを返す。
                 """
                 try:
-                    if v is None or (isinstance(v, (str, float)) and (str(v).strip() == "" or pd.isna(v))):
+                    # None, NaN, 空文字列の場合はハイフンを返す
+                    if v is None or (isinstance(v, (str, float)) and (str(v).strip() == "" or pd.isna(v) or str(v).strip() == '-')):
                         return "-"
                     
-                    # 'point' や 'rank' がNone, NaN, 空文字列でないことを確認してから float に変換
+                    # 数値に変換できるか試す
                     num = float(v)
                     
                     if use_comma:
@@ -632,7 +645,8 @@ def display_room_status(profile_data, input_room_id):
             # 最終的な欠損値/空文字列のハイフン化（主にランクなど数値フォーマットを通らない文字列列用）
             for col in ['ランク']: 
                 if col in dfp_display.columns:
-                    dfp_display[col] = dfp_display[col].apply(lambda x: '-' if x == '' or pd.isna(x) else x)
+                    # None, NaN, 空文字列、ハイフン以外の '-' を含む場合はハイフンに変換
+                    dfp_display[col] = dfp_display[col].apply(lambda x: '-' if x is None or x == '' or pd.isna(x) or str(x).strip() == '-' else x)
 
 
             # --- ルーム名をリンクに置き換える ---
