@@ -7,10 +7,10 @@ from dateutil import parser
 import numpy as np
 
 # Streamlit の初期設定
+# StreamlitInvalidPageLayoutErrorを避けるため、initial_sidebar_state="collapsed"を削除しました。
 st.set_page_config(
     page_title="SHOWROOM ルームステータス可視化ツール",
-    layout="auto",
-    initial_sidebar_state="collapsed"
+    layout="auto" # 縦型（スマートフォン）を考慮
 )
 
 # --- 定数設定 ---
@@ -66,6 +66,7 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     """
     イベント参加ルーム情報・状況APIから必要な情報を抽出する。
     イベントIDが存在すれば、開催状況に関わらずAPIを叩く。
+    無駄な全件取得は行わず、最大2ページ目まで確認する。
     """
     if not event_id:
         # イベントに参加していない場合はすぐに終了
@@ -76,8 +77,8 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     total_entries = 0
     current_room_data = None
     
-    # 1ページ目（ランキング情報と上位10ルームのデータを含む可能性が高い）を取得
-    while page <= 2: # 自身が2ページ目以降にいる可能性も考慮し、最大2ページ目まで確認
+    # 1ページ目（ランキング情報と上位ルーム）と、自身が2ページ目にいる可能性を考慮し、最大2ページ目まで確認
+    while page <= 2: 
         url = EVENT_ROOM_LIST_API.format(event_id=event_id, page=page)
         try:
             response = requests.get(url, timeout=10)
@@ -100,7 +101,7 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
                 if str(room.get("room_id")) == str(target_room_id):
                     current_room_data = room
             
-            # 1ページ目で上位10ルームを取得
+            # 1ページ目で上位10ルームの候補を取得
             if page == 1:
                 participants_data.extend(data["room_list"])
             
@@ -122,7 +123,7 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     point = _safe_get(current_room_data, ["point"], "-")
     level = _safe_get(current_room_data, ["quest_level"], "-")
 
-    # 上位10ルームをポイント順にソートして抽出（イベントが終了していても取得できたデータでソート）
+    # 上位10ルームをポイント順にソートして抽出
     top_participants = participants_data
     if top_participants:
         # ポイントでソート
@@ -171,6 +172,7 @@ def display_room_status(profile_data, input_room_id):
     
     col1, col2 = st.columns(2)
 
+    # Note: 取得データがint型か確認し、カンマ区切りを適用
     with col1:
         st.metric(label="ルームレベル", value=f"{room_level:,}" if isinstance(room_level, int) else str(room_level))
         st.metric(label="現在のSHOWランク", value=show_rank)
@@ -230,10 +232,12 @@ def display_room_status(profile_data, input_room_id):
             # イベント参加情報表示 (4カラムで横並び)
             event_col_data1, event_col_data2, event_col_data3, event_col_data4 = st.columns(4)
             with event_col_data1:
+                # Note: total_entriesがint型または"-"である前提
                 st.metric(label="参加ルーム数", value=f"{total_entries:,}" if isinstance(total_entries, int) else str(total_entries))
             with event_col_data2:
                 st.metric(label="順位", value=str(rank))
             with event_col_data3:
+                # Note: pointがint型または"-"である前提
                 st.metric(label="ポイント", value=f"{point:,}" if isinstance(point, int) else str(point))
             with event_col_data4:
                 st.metric(label="レベル", value=str(level))
