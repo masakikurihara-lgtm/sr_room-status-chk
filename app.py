@@ -68,6 +68,7 @@ def get_room_profile(room_id):
 # --- イベント情報取得関数群 ---
 
 def get_total_entries(event_id):
+    """イベント参加者総数を取得する（これはページネーションの必要なし）"""
     params = {"event_id": event_id}
     try:
         response = requests.get(API_EVENT_ROOM_LIST_URL, headers=HEADERS, params=params, timeout=10)
@@ -83,26 +84,55 @@ def get_total_entries(event_id):
 
 
 def get_event_room_list_data(event_id):
-    params = {"event_id": event_id}
-    try:
-        resp = requests.get(API_EVENT_ROOM_LIST_URL, headers=HEADERS, params=params, timeout=10)
-        if resp.status_code == 404:
-            return []
-        resp.raise_for_status()
-        data = resp.json()
-        
-        # イベントAPIのリストが格納されている可能性のあるキーを探索
-        if isinstance(data, dict):
-            for k in ('list', 'room_list', 'event_entry_list', 'entries', 'data', 'event_list'):
-                if k in data and isinstance(data[k], list):
-                    return data[k]
-        if isinstance(data, list):
-            return data
+    """
+    🔥 最終修正: ページネーションを、ご指定の 'p' パラメーターで実装し、全参加者リストを取得する。
+    """
+    all_rooms = []
+    page = 1 # ページカウンター ('p' パラメーターの値)
+    count = 50 # 1ページあたりの取得件数（標準的な値）
+    
+    while True:
+        # 🚨 修正: 'page' ではなく 'p' を使用
+        params = {"event_id": event_id, "p": page, "count": count}
+        try:
+            # ページごとにAPIをリクエスト
+            resp = requests.get(API_EVENT_ROOM_LIST_URL, headers=HEADERS, params=params, timeout=15)
             
-    except Exception:
-        return []
-        
-    return []
+            if resp.status_code == 404:
+                # 404エラーの場合はイベントIDが存在しないか終了している
+                return []
+            
+            resp.raise_for_status()
+            data = resp.json()
+            
+            current_page_rooms = []
+            
+            # APIレスポンスからリストデータを抽出
+            if isinstance(data, dict):
+                for k in ('list', 'room_list', 'event_entry_list', 'entries', 'data', 'event_list'):
+                    if k in data and isinstance(data[k], list):
+                        current_page_rooms = data[k]
+                        break
+            elif isinstance(data, list):
+                current_page_rooms = data
+                
+            if not current_page_rooms:
+                # リストが空であれば、これ以上データがないと判断してループ終了
+                break
+
+            all_rooms.extend(current_page_rooms)
+            
+            # 取得数がページあたりの件数（count）より少なければ最終ページと判断
+            if len(current_page_rooms) < count:
+                break
+            
+            page += 1 # 次のページへ
+
+        except Exception:
+            # ネットワークエラーなどで中断
+            break
+            
+    return all_rooms
 
 def get_event_participants_info(event_id, target_room_id, limit=10):
     """
@@ -112,25 +142,24 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     if not event_id:
         return {"total_entries": "-", "rank": "-", "point": "-", "level": "-", "top_participants": []}
 
-    total_entries = get_total_entries(event_id)
+    # 全参加者リストを取得（ページネーション対応済み）
     room_list_data = get_event_room_list_data(event_id)
+    total_entries = get_total_entries(event_id) # total_entriesはページネーションに関わらず取得可能
     current_room_data = None
     
     # --- 🎯 ターゲットルームの情報をリスト全体から確実に探す ---
-    # `room_id` は数値型または文字列型で比較できるようにする
     target_room_id_str = str(target_room_id)
     for room in room_list_data:
-        # room_id が存在し、ターゲットルームIDと一致するか確認
         if str(room.get("room_id")) == target_room_id_str:
             current_room_data = room
             break
 
     # --- 🎯 ターゲットルームの参加状況を確定 ---
     if current_room_data:
-        # 順位: "rank"、または "rank_entry" など複数のキーを試行
+        # 順位: "rank" を使用
         rank = _safe_get(current_room_data, ["rank"], default_value="-")
         
-        # ポイント: "point"、または "score" など複数のキーを試行
+        # ポイント: "point"、または "score" を試行
         point = _safe_get(current_room_data, ["point"], default_value=None)
         if point is None or point == "-":
              point = _safe_get(current_room_data, ["score"], default_value="-")
@@ -140,11 +169,11 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
         if level is None or level == "-":
              level = _safe_get(current_room_data, ["entry_level"], default_value="-")
         if level is None or level == "-":
-             level = _safe_get(current_room_data, ["event_entry", "level"], default_value="-") # 最終試行
-        if level is None: level = "-" # None の場合は最終的にハイフン
+             level = _safe_get(current_room_data, ["event_entry", "level"], default_value="-")
+        if level is None: level = "-" 
         
     else:
-        # ターゲットルームがリストに見つからなかった場合（参加者リストにまだ載っていない等）
+        # ターゲットルームがリストに見つからなかった場合
         rank = "-"
         point = "-"
         level = "-"
@@ -157,7 +186,7 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
         # point/score は文字列またはNoneの可能性があるため、intにキャストしてソート
         top_participants.sort(key=lambda x: int(str(x.get('point', x.get('score', 0)) or 0)), reverse=True)
     
-    # ここで初めてリストを上位10件に制限する
+    # ここでリストを上位10件に制限する
     top_participants = top_participants[:limit]
 
 
@@ -466,7 +495,6 @@ def display_room_status(profile_data, input_room_id):
                 st.metric(label="参加ルーム数", value=f"{total_entries:,}" if isinstance(total_entries, int) else str(total_entries), delta_color="off")
             with event_col_data2:
                 # 順位は確定した値を使用
-                # 数値型に変換可能ならカンマなしで表示、変換不可なら文字列のまま
                 rank_display = str(rank)
                 try:
                     rank_display = f"{int(rank):,}"
@@ -476,7 +504,6 @@ def display_room_status(profile_data, input_room_id):
 
             with event_col_data3:
                 # 獲得ポイントは確定した値を使用
-                # 数値型に変換可能ならカンマありで表示、変換不可なら文字列のまま
                 point_display = str(point)
                 try:
                     point_display = f"{int(point):,}"
