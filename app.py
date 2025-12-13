@@ -37,7 +37,6 @@ def _safe_get(data, keys, default_value=None):
         else:
             return default_value
     # 取得した値がNone、空の文字列、またはNaNの場合もデフォルト値を返す
-    # ★修正のポイント: ここで「-」にせず、呼び出し元で判定するために default_value が None の場合はそのまま返す
     if temp is None or (isinstance(temp, str) and temp.strip() == "") or (isinstance(temp, float) and pd.isna(temp)):
         return default_value
     return temp
@@ -86,13 +85,14 @@ def get_total_entries(event_id):
 
 def get_event_room_list_data(event_id):
     """
-    全参加者リストを取得する。
+    全参加者リストを取得する。（ページネーション対応を強化）
     """
     all_rooms = []
     page = 1 # ページカウンター ('p' パラメーターの値)
     count = 50 # 1ページあたりの取得件数（標準的な値）
+    max_pages = 200 # 無限ループ防止のため最大ページ数を設定（イベント参加者が1万人の場合でもカバー）
     
-    while True:
+    while page <= max_pages:
         params = {"event_id": event_id, "p": page, "count": count}
         try:
             # ページごとにAPIをリクエスト
@@ -100,7 +100,7 @@ def get_event_room_list_data(event_id):
             
             if resp.status_code == 404:
                 # 404エラーの場合はイベントIDが存在しないか終了している
-                return []
+                break
             
             resp.raise_for_status()
             data = resp.json()
@@ -109,6 +109,7 @@ def get_event_room_list_data(event_id):
             
             # APIレスポンスからリストデータを抽出
             if isinstance(data, dict):
+                # 複数のキー名からルームリストを取得するロジックは維持
                 for k in ('list', 'room_list', 'event_entry_list', 'entries', 'data', 'event_list'):
                     if k in data and isinstance(data[k], list):
                         current_page_rooms = data[k]
@@ -137,48 +138,49 @@ def get_event_room_list_data(event_id):
 def get_event_participants_info(event_id, target_room_id, limit=10):
     """
     イベント参加ルーム情報・状況APIから必要な情報を抽出する。
-    ターゲットルームの順位、ポイント、レベルを確実に取得する。（再々修正ロジック）
+    ターゲットルームの順位、ポイント、レベルを確実に取得する。（検索ロジックを最終強化）
     """
-    target_room_id_str = str(target_room_id)
+    # ★修正点1: ターゲットルームIDを文字列に統一
+    target_room_id_str = str(target_room_id).strip()
     
     if not event_id:
         return {"total_entries": "-", "rank": "-", "point": "-", "level": "-", "top_participants": []}
 
-    # 全参加者リストを取得
+    # 全参加者リストを取得（2ページ目以降も含む）
     room_list_data = get_event_room_list_data(event_id)
     total_entries = get_total_entries(event_id)
     current_room_data = None
     
-    # --- 🎯 ターゲットルームの情報をリスト全体から確実に探す ---
+    # --- 🎯 ターゲットルームの情報をリスト全体から確実に探す (検索ロジック最終強化) ---
     for room in room_list_data:
-        # room_id の比較は文字列型で行う
-        if str(room.get("room_id")) == target_room_id_str:
+        room_id_in_list = room.get("room_id")
+        
+        # room_id が存在し、文字列化したものがターゲットIDと一致するか確認
+        if room_id_in_list is not None and str(room_id_in_list).strip() == target_room_id_str:
             current_room_data = room
+            # ★修正点2: 見つけたらすぐにループを抜ける（このデータを使用する）
             break
 
-    # --- 🎯 ターゲットルームの参加状況を確定 (再々修正ロジック) ---
+    # --- 🎯 ターゲットルームの参加状況を確定 ---
     rank = None
     point = None
     level = None
     
     if current_room_data:
-        # 1. 順位: "rank" を取得。APIが存在すれば値（数値または文字列）が取得される。
+        # _safe_get を使用して安全に値を取得
         rank = _safe_get(current_room_data, ["rank"], default_value=None)
         
-        # 2. ポイント: "point" または "score" を取得。
         point = _safe_get(current_room_data, ["point"], default_value=None)
         if point is None:
              point = _safe_get(current_room_data, ["score"], default_value=None)
         
-        # 3. レベル: 複数の場所を試行。
         level = _safe_get(current_room_data, ["event_entry", "quest_level"], default_value=None)
         if level is None:
              level = _safe_get(current_room_data, ["entry_level"], default_value=None)
         if level is None:
              level = _safe_get(current_room_data, ["event_entry", "level"], default_value=None)
     
-    # 取得結果の None を表示用のハイフンに変換
-    # APIから 0 や空でない文字列が取得できていれば、ここで None にはならない。
+    # 取得結果の None を表示用のハイフンに変換 (0や有効な値はそのまま残る)
     rank = "-" if rank is None else rank
     point = "-" if point is None else point
     level = "-" if level is None else level
