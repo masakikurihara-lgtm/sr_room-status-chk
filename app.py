@@ -38,6 +38,7 @@ def _safe_get(data, keys, default_value=None):
         return default_value
     return temp
 
+# 🚨 この関数はルームIDの数値範囲による簡易判定（今回の「公/フ」表示では使用しない）
 def get_official_mark(room_id):
     """簡易的な公/フ判定"""
     try:
@@ -128,7 +129,7 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     level = _safe_get(current_room_data, ["quest_level"], "-")
 
     top_participants = room_list_data
-    # ✅ 要件: ポイントの高い順にソート
+    # 要件: ポイントの高い順にソート
     if top_participants:
         # ポイントでソート (pointがない/None/無効な値の場合は0として扱う)
         top_participants.sort(key=lambda x: int(str(x.get('point', 0) or 0)), reverse=True)
@@ -141,19 +142,22 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     for participant in top_participants:
         room_id = participant.get('room_id')
         
-        # 取得必須のキーを初期化
-        for key in ['room_level', 'show_rank_subdivided', 'follower_num', 'live_continuous_days']:
-            participant[key] = ""
+        # 取得必須のキーを初期化（Noneで初期化）
+        for key in ['room_level', 'show_rank_subdivided', 'follower_num', 'live_continuous_days', 'is_official_api']: 
+            participant[key] = None
             
         if room_id:
             # 個別のプロフィールAPIを叩く
             profile = get_room_profile(room_id)
             if profile:
                 # プロフィールデータをマージ
-                participant['room_level'] = _safe_get(profile, ["room_level"], "")
-                participant['show_rank_subdivided'] = _safe_get(profile, ["show_rank_subdivided"], "")
-                participant['follower_num'] = _safe_get(profile, ["follower_num"], "")
-                participant['live_continuous_days'] = _safe_get(profile, ["live_continuous_days"], "")
+                participant['room_level'] = _safe_get(profile, ["room_level"], None)
+                participant['show_rank_subdivided'] = _safe_get(profile, ["show_rank_subdivided"], None)
+                participant['follower_num'] = _safe_get(profile, ["follower_num"], None)
+                participant['live_continuous_days'] = _safe_get(profile, ["live_continuous_days"], None)
+                
+                # ✅ is_officialを追加で取得
+                participant['is_official_api'] = _safe_get(profile, ["is_official"], None)
                 
                 # ルーム名が空の場合に備えて補完
                 if not participant.get('room_name'):
@@ -188,6 +192,7 @@ def display_room_status(profile_data, input_room_id):
     event = _safe_get(profile_data, ["event"], {})
 
     # 加工・整形
+    # ✅ ルーム基本情報での「公/フ」判定ロジック（問題なし）
     official_status = "公式" if is_official is True else "フリー" if is_official is False else "-"
     genre_name = GENRE_MAP.get(genre_id, f"その他 ({genre_id})" if genre_id else "-")
     
@@ -279,11 +284,18 @@ def display_room_status(profile_data, input_room_id):
             # top_participantsはすでにプロフィールデータでエンリッチされている
             dfp = pd.DataFrame(top_participants)
 
-            # 必要なカラムが全て存在することを確認（念のため）
+            # 必要なカラムが全て存在することを確認
             cols = [
                 'room_name', 'room_level', 'show_rank_subdivided', 'follower_num',
-                'live_continuous_days', 'room_id', 'rank', 'point'
+                'live_continuous_days', 'room_id', 'rank', 'point',
+                'is_official_api' # ✅ APIで取得した official 情報を取得対象に追加
             ]
+            
+            # DataFrameに欠損しているカラムをNoneで埋める（APIエラー時などに備えて）
+            for c in cols:
+                if c not in dfp.columns:
+                    dfp[c] = None
+                    
             dfp_display = dfp[cols].copy()
 
             # ▼ rename（ユーザー様の仕様通り）
@@ -293,19 +305,29 @@ def display_room_status(profile_data, input_room_id):
                 'show_rank_subdivided': 'SHOWランク',
                 'follower_num': 'フォロワー数', 
                 'live_continuous_days': 'まいにち配信', 
-                'room_id': 'ルームID',
+                # 'room_id': 'ルームID', # この列はリンク生成後にドロップするため、renameしない
                 'rank': '順位', 
-                'point': 'ポイント'
+                'point': 'ポイント',
+                'is_official_api': 'is_official_api' # 一時的なキーとして残す
             }, inplace=True)
 
+            # --- ▼ 公/フ 判定関数（API情報使用） ▼ ---
+            def get_official_mark_from_api(is_official_value):
+                """APIのis_official値に基づいて公/フを判定する (True=公, False=フ)"""
+                if is_official_value is True:
+                    return "公"
+                elif is_official_value is False:
+                    return "フ"
+                else:
+                    return "不明"
+            
             # ▼ 公/フ を追加
-            dfp_display["公/フ"] = dfp_display["ルームID"].apply(get_official_mark)
+            # ✅ 修正: APIから取得した is_official_api を使って公/フを判定
+            dfp_display["公/フ"] = dfp_display['is_official_api'].apply(get_official_mark_from_api)
+            
+            # 不要になった is_official_api 列を削除 (room_idはリンク生成のために残す)
+            dfp_display.drop(columns=['is_official_api'], inplace=True, errors='ignore')
 
-            # ▼ 列順をここで整える（仕様通り）
-            dfp_display = dfp_display[
-                ['ルーム名', 'ルームレベル', 'SHOWランク', 'フォロワー数',
-                 'まいにち配信', '公/フ', '順位', 'ポイント'] # ルームIDはリンク作成後に不要なため除外
-            ]
 
             # --- ▼ 数値フォーマット関数（カンマ区切りを切替可能） ▼ ---
             def _fmt_int_for_display(v, use_comma=True):
@@ -336,21 +358,29 @@ def display_room_status(profile_data, input_room_id):
             dfp_display['SHOWランク'] = dfp_display['SHOWランク'].fillna('-')
             dfp_display['ルームレベル'] = dfp_display['ルームレベル'].fillna('') # レベルが取得できなかった場合は空欄
 
-            # --- ✅ ルーム名をリンクに置き換える ---
-            # dfpはroom_idを持つ元のDataFrame
-            dfp_link_data = dfp[['room_id', 'room_name']].copy()
-            dfp_link_data['room_name'] = dfp_link_data['room_name'].fillna('')
-
+            # --- ルーム名をリンクに置き換える ---
+            # dfp_displayにはroom_idが存在するため、それを利用
             def _make_link_final(row):
                 rid = row['room_id']
-                name = row['room_name']
+                # dfpのroom_nameを利用（NaNを空文字列に）
+                name = row['ルーム名']
                 if not name:
                     name = f"room_{rid}"
                 # target="_blank"で別窓リンク
                 return f'<a href="https://www.showroom-live.com/room/profile?room_id={rid}" target="_blank">{name}</a>'
 
             # リンクを生成し、dfp_displayの'ルーム名'列を上書き
-            dfp_display['ルーム名'] = dfp_link_data.apply(_make_link_final, axis=1)
+            dfp_display['ルーム名'] = dfp_display.apply(_make_link_final, axis=1)
+            
+            # 不要になった room_id 列を削除
+            dfp_display.drop(columns=['room_id'], inplace=True, errors='ignore')
+
+            # ▼ 列順をここで整える（仕様通り）
+            dfp_display = dfp_display[
+                ['ルーム名', 'ルームレベル', 'SHOWランク', 'フォロワー数',
+                 'まいにち配信', '公/フ', '順位', 'ポイント'] 
+            ]
+
 
             # コンパクトに expander 内で表示
             with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
