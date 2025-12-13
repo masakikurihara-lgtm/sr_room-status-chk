@@ -574,7 +574,7 @@ def display_room_status(profile_data, input_room_id):
                 html_table = dfp_display.to_html(
                     escape=False, 
                     index=False, 
-                    justify='left', 
+                    justify='center', 
                     classes='dataframe data-table data-table-full-width' 
                 )
                 
