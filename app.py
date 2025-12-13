@@ -33,7 +33,7 @@ def _safe_get(data, keys, default_value=None):
     temp = data
     for key in keys:
         if isinstance(temp, dict) and key in temp:
-            temp = temp.get(key)
+            temp = temp = temp.get(key)
         else:
             return default_value
     # 取得した値がNone、空の文字列、またはNaNの場合もデフォルト値を返す
@@ -46,9 +46,9 @@ def get_official_mark(room_id):
     try:
         room_id = int(room_id)
         if room_id < 100000:
-             return "公"
+            return "公"
         elif room_id >= 100000:
-             return "フ"
+            return "フ"
         else:
             return "不明"
     except (TypeError, ValueError):
@@ -71,6 +71,7 @@ def get_total_entries(event_id):
     """イベント参加者総数を取得する（これはページネーションの必要なし）"""
     params = {"event_id": event_id}
     try:
+        # 1ページ目を取得して total_entries を確認
         response = requests.get(API_EVENT_ROOM_LIST_URL, headers=HEADERS, params=params, timeout=10)
         if response.status_code == 404:
             return 0
@@ -85,19 +86,21 @@ def get_total_entries(event_id):
 
 def get_event_room_list_data(event_id):
     """
-    全参加者リストを取得する。（ページネーション対応を強化）
+    全参加者リストを取得する。（ページネーション対応を API のメタ情報に基づいて強化）
     
     【重要修正点】
-    - APIの応答が途中で途切れる可能性があるため、取得できたデータが50件未満になったら
-      （またはリストが空になったら）終了するロジックを維持し、安定化させる。
+    - APIの応答に含まれる 'next_page' および 'last_page' を利用し、より確実な全件取得を実現。
+    - リストの長さではなく、APIのページネーション情報に基づいてループを制御する。
     """
     all_rooms = []
     page = 1 # ページカウンター ('p' パラメーターの値)
     count = 50 # 1ページあたりの取得件数（SHOWROOM APIの標準値）
     max_pages = 50 # 無限ループ防止のため最大ページ数を設定 (50 * 50 = 2500ルームまで取得を試みる)
     
-    while page <= max_pages:
-        # 'count' パラメータはAPIに無視される可能性があるが、念のため送信
+    # ページネーション制御用のフラグ
+    has_next_page = True
+    
+    while page <= max_pages and has_next_page:
         params = {"event_id": event_id, "p": page, "count": count} 
         try:
             # ページごとにAPIをリクエスト
@@ -119,21 +122,35 @@ def get_event_room_list_data(event_id):
                     if k in data and isinstance(data[k], list):
                         current_page_rooms = data[k]
                         break
-            elif isinstance(data, list):
-                current_page_rooms = data
                 
+                # --- ★ ページネーション制御の主要な修正点 ★ ---
+                next_page = data.get('next_page')
+                current_page = data.get('current_page')
+                last_page = data.get('last_page')
+                
+                # next_page が None または last_page を超えている場合は、次のページがないと判断
+                if next_page is None or (last_page is not None and next_page > last_page):
+                    has_next_page = False
+                
+            elif isinstance(data, list):
+                # リスト形式で返ってきた場合（非推奨だが念のため対応）
+                current_page_rooms = data
+                # リスト形式の場合は、リストの長さで次のページがあるかを判断（APIの仕様次第で不確実）
+                if len(current_page_rooms) < count:
+                    has_next_page = False
+            else:
+                # データ形式が不正
+                break
+
             if not current_page_rooms:
-                # リストが空であれば、これ以上データがないと判断してループ終了
+                # ルームリストが空であれば、これ以上データがないと判断してループ終了
                 break
 
             all_rooms.extend(current_page_rooms)
             
-            # 取得数がページあたりの想定件数（count=50）より少なければ最終ページと判断
-            # 1ページあたり50件返ってくることが保証されていると仮定
-            if len(current_page_rooms) < count:
-                break
-            
-            page += 1 # 次のページへ
+            # next_page 情報が取れていればそれを利用、取れていなければページカウンターをインクリメント
+            if has_next_page:
+                page = page + 1 # 次のページへ
 
         except Exception as e:
             # ネットワークエラーなどで中断
@@ -178,13 +195,13 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
         
         point = _safe_get(current_room_data, ["point"], default_value=None)
         if point is None:
-             point = _safe_get(current_room_data, ["score"], default_value=None)
+            point = _safe_get(current_room_data, ["score"], default_value=None)
         
         level = _safe_get(current_room_data, ["event_entry", "quest_level"], default_value=None)
         if level is None:
-             level = _safe_get(current_room_data, ["entry_level"], default_value=None)
+            level = _safe_get(current_room_data, ["entry_level"], default_value=None)
         if level is None:
-             level = _safe_get(current_room_data, ["event_entry", "level"], default_value=None)
+            level = _safe_get(current_room_data, ["event_entry", "level"], default_value=None)
     
     # 取得結果の None を表示用のハイフンに変換 (0や有効な値はそのまま残る)
     rank = "-" if rank is None else rank
@@ -225,18 +242,18 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
                 participant['is_official_api'] = _safe_get(profile, ["is_official"], None)
                 
                 if not participant.get('room_name'):
-                     participant['room_name'] = _safe_get(profile, ["room_name"], f"Room {room_id}")
+                    participant['room_name'] = _safe_get(profile, ["room_name"], f"Room {room_id}")
         
         # イベントの「レベル」を取得 ('event_entry.quest_level' またはその他のキーから)
         participant['quest_level'] = _safe_get(participant, ["event_entry", "quest_level"], None)
         if participant['quest_level'] is None:
-             participant['quest_level'] = _safe_get(participant, ["entry_level"], None)
+            participant['quest_level'] = _safe_get(participant, ["entry_level"], None)
         if participant['quest_level'] is None:
-             participant['quest_level'] = _safe_get(participant, ["event_entry", "level"], None)
+            participant['quest_level'] = _safe_get(participant, ["event_entry", "level"], None)
 
         # 最終的に quest_level がセットされていない場合、ここでキーを追加（DataFrame化でエラーが出ないように）
         if 'quest_level' not in participant:
-             participant['quest_level'] = None
+            participant['quest_level'] = None
 
         enriched_participants.append(participant)
 
