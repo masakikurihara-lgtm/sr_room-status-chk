@@ -197,11 +197,52 @@ def display_room_status(profile_data, input_room_id):
     genre_name = GENRE_MAP.get(genre_id, f"その他 ({genre_id})" if genre_id else "-")
     
     room_url = f"https://www.showroom-live.com/room/profile?room_id={input_room_id}"
-
-    # タイトル
-    st.markdown(f"## 🎤 <a href='{room_url}' target='_blank'>{room_name} ({input_room_id})</a> のルームステータス", unsafe_allow_html=True)
     
-    # --- 📊 ルーム基本情報（第一カテゴリー） ---
+    # --- 💡 カスタムCSSの定義（タイトル領域用） ---
+    # タイトルを独立させ、背景色とパディングを設定するCSS
+    title_style = """
+    <style>
+    /* タイトル領域のスタイル */
+    .room-title-container {
+        padding: 15px 20px;
+        margin-bottom: 20px;
+        border-radius: 8px;
+        /* 背景色をStreamlitのプライマリカラーに近い色に設定 */
+        background-color: #f0f2f6; 
+        border: 1px solid #e6e6e6;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        display: flex;
+        align-items: center;
+    }
+    .room-title-container h1 {
+        margin: 0;
+        padding: 0;
+        line-height: 1.2;
+        font-size: 28px; 
+    }
+    .room-title-container .title-icon {
+        font-size: 30px; /* アイコンサイズ */
+        margin-right: 15px;
+        color: #ff4b4b; /* アクセントカラー */
+    }
+    .room-title-container a {
+        text-decoration: none; /* リンクの下線を削除 */
+        color: #1c1c1c; /* 文字色 */
+    }
+    </style>
+    """
+    st.markdown(title_style, unsafe_allow_html=True)
+
+    # --- 1. 🎤 ルーム名/ID (タイトル領域) ---
+    st.markdown(
+        f'<div class="room-title-container">'
+        f'<span class="title-icon">🎤</span>'
+        f'<h1><a href="{room_url}" target="_blank">{room_name} ({input_room_id})</a> のルームステータス</h1>'
+        f'</div>', 
+        unsafe_allow_html=True
+    )
+    
+    # --- 2. 📊 ルーム基本情報（第一カテゴリー） ---
     st.markdown("### 📊 ルーム基本情報")
     
     # 4列に分割して、情報を表形式で表示
@@ -243,7 +284,7 @@ def display_room_status(profile_data, input_room_id):
 
     st.divider()
 
-    # --- 🏆 現在の参加イベント情報（第二カテゴリー） ---
+    # --- 3. 🏆 現在の参加イベント情報（第二カテゴリー） ---
     st.markdown("### 🏆 現在の参加イベント情報")
 
     event_id = event.get("event_id")
@@ -301,7 +342,7 @@ def display_room_status(profile_data, input_room_id):
 
         st.divider()
 
-        # --- 🔝 参加イベント上位10ルーム（HTMLテーブル） ---
+        # --- 4. 🔝 参加イベント上位10ルーム（HTMLテーブル） ---
         st.markdown("### 🔝 参加イベント上位10ルーム")
         
         if top_participants:
@@ -365,7 +406,6 @@ def display_room_status(profile_data, input_room_id):
                     return str(v)
 
             # --- ▼ 列ごとにフォーマット適用 ▼ ---
-            # ランクテーブルでは、レベル/フォロワー/配信日数はカンマなし、ポイントのみカンマありにする
             format_cols_no_comma = ['Lv', 'フォロワー数', 'まいにち配信', '順位']
             format_cols_comma = ['ポイント']
 
@@ -408,34 +448,44 @@ def display_room_status(profile_data, input_room_id):
                 # 1. ヘッダーの背景色を強調
                 # 2. 列間のスペースを調整し、よりコンパクトに
                 # 3. 数値列の右寄せを強化
-                style = """
+                # 4. 行のホバー効果を追加
+                table_style = """
                 <style>
-                /* Streamlitの内部クラス名に基づくカスタマイズ */
+                /* テーブル全体のスタイル */
                 .stHtml .dataframe {
-                    width: 100%; /* テーブルの幅を確保 */
+                    width: 100%; 
                     border-collapse: collapse;
                 }
+                /* ヘッダーのスタイル */
                 .stHtml .dataframe th {
-                    background-color: #f0f2f6; /* ヘッダーの背景色を薄いグレーに */
-                    color: #262730; /* ヘッダーの文字色 */
+                    background-color: #e8eaf6; /* ヘッダーの背景色をライトブルーに */
+                    color: #1a237e; /* ヘッダーの文字色を濃い青に */
                     font-weight: bold;
-                    padding: 6px 8px; /* パディング調整 */
+                    padding: 8px 10px; /* パディング調整 */
                     font-size: 14px;
                     text-align: left;
-                    border-bottom: 2px solid #e0e0e0;
+                    border-bottom: 2px solid #c5cae9; /* 太い下線 */
+                    white-space: nowrap;
                 }
+                /* セルのスタイル */
                 .stHtml .dataframe td {
-                    padding: 4px 8px; /* パディング調整 */
-                    font-size: 13px; /* フォントサイズ調整 */
+                    padding: 6px 10px; /* パディング調整 */
+                    font-size: 13px; 
                     line-height: 1.4;
-                    border-bottom: 1px solid #eeeeee;
-                    white-space: nowrap; /* 折り返しを強制的に防ぐ */
+                    border-bottom: 1px solid #f0f0f0;
+                    white-space: nowrap; 
                 }
-                
+                /* 行のホバー効果 */
+                .stHtml .dataframe tbody tr:hover {
+                    background-color: #f7f9fd; /* ホバー時の背景色をさらに薄く */
+                }
+
+                /* 列ごとの配置調整 */
                 /* ポイント列を右寄せ */
                 .stHtml .dataframe th:nth-child(8), 
                 .stHtml .dataframe td:nth-child(8) {
                     text-align: right !important; 
+                    font-weight: bold;
                 }
                 /* Lv, フォロワー数, まいにち配信, 順位を中央寄せ */
                 .stHtml .dataframe th:nth-child(2), .stHtml .dataframe td:nth-child(2),
@@ -448,6 +498,7 @@ def display_room_status(profile_data, input_room_id):
                 .stHtml .dataframe th:nth-child(6), .stHtml .dataframe td:nth-child(6) {
                     text-align: center !important; 
                     font-weight: bold;
+                    color: #ff4b4b; /* 公/フの文字色を強調 */
                 }
                 /* ルーム名のセル幅を柔軟に */
                 .stHtml .dataframe th:nth-child(1), .stHtml .dataframe td:nth-child(1) {
@@ -470,7 +521,7 @@ def display_room_status(profile_data, input_room_id):
                 html_table = re.sub(r'>\s+<', '><', html_table)
 
                 # カスタムCSSとHTMLテーブルを一緒に表示
-                st.markdown(style + html_table, unsafe_allow_html=True)
+                st.markdown(table_style + html_table, unsafe_allow_html=True)
         else:
             st.info("参加ルーム情報が取得できませんでした（ランキングイベントではない、またはデータがまだありません）。")
 
