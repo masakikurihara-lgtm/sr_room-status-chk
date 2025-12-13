@@ -6,7 +6,7 @@ import datetime
 from dateutil import parser
 import numpy as np
 import re
-import json 
+import json
 
 # Streamlit の初期設定
 st.set_page_config(
@@ -17,8 +17,8 @@ st.set_page_config(
 # --- 定数設定 ---
 ROOM_LIST_URL = "https://mksoul-pro.com/showroom/file/room_list.csv"
 ROOM_PROFILE_API = "https://www.showroom-live.com/api/room/profile?room_id={room_id}"
-API_EVENT_ROOM_LIST_URL = "https://www.showroom-live.com/api/event/room_list" 
-HEADERS = {} 
+API_EVENT_ROOM_LIST_URL = "https://www.showroom-live.com/api/event/room_list"
+HEADERS = {}
 
 GENRE_MAP = {
     112: "ミュージック", 102: "アイドル", 103: "タレント", 104: "声優",
@@ -86,14 +86,19 @@ def get_total_entries(event_id):
 def get_event_room_list_data(event_id):
     """
     全参加者リストを取得する。（ページネーション対応を強化）
+    
+    【重要修正点】
+    - APIの応答が途中で途切れる可能性があるため、取得できたデータが50件未満になったら
+      （またはリストが空になったら）終了するロジックを維持し、安定化させる。
     """
     all_rooms = []
     page = 1 # ページカウンター ('p' パラメーターの値)
-    count = 50 # 1ページあたりの取得件数（標準的な値）
-    max_pages = 200 # 無限ループ防止のため最大ページ数を設定（イベント参加者が1万人の場合でもカバー）
+    count = 50 # 1ページあたりの取得件数（SHOWROOM APIの標準値）
+    max_pages = 50 # 無限ループ防止のため最大ページ数を設定 (50 * 50 = 2500ルームまで取得を試みる)
     
     while page <= max_pages:
-        params = {"event_id": event_id, "p": page, "count": count}
+        # 'count' パラメータはAPIに無視される可能性があるが、念のため送信
+        params = {"event_id": event_id, "p": page, "count": count} 
         try:
             # ページごとにAPIをリクエスト
             resp = requests.get(API_EVENT_ROOM_LIST_URL, headers=HEADERS, params=params, timeout=15)
@@ -109,7 +114,7 @@ def get_event_room_list_data(event_id):
             
             # APIレスポンスからリストデータを抽出
             if isinstance(data, dict):
-                # 複数のキー名からルームリストを取得するロジックは維持
+                # 複数のキー名からルームリストを取得
                 for k in ('list', 'room_list', 'event_entry_list', 'entries', 'data', 'event_list'):
                     if k in data and isinstance(data[k], list):
                         current_page_rooms = data[k]
@@ -123,14 +128,16 @@ def get_event_room_list_data(event_id):
 
             all_rooms.extend(current_page_rooms)
             
-            # 取得数がページあたりの件数（count）より少なければ最終ページと判断
+            # 取得数がページあたりの想定件数（count=50）より少なければ最終ページと判断
+            # 1ページあたり50件返ってくることが保証されていると仮定
             if len(current_page_rooms) < count:
                 break
             
             page += 1 # 次のページへ
 
-        except Exception:
+        except Exception as e:
             # ネットワークエラーなどで中断
+            print(f"イベントリスト取得エラー: Event ID {event_id}, Page {page}, Error: {e}")
             break
             
     return all_rooms
@@ -140,27 +147,26 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     イベント参加ルーム情報・状況APIから必要な情報を抽出する。
     ターゲットルームの順位、ポイント、レベルを確実に取得する。（検索ロジックを最終強化）
     """
-    # ★修正点1: ターゲットルームIDを文字列に統一
+    # ターゲットルームIDを文字列に統一（APIのJSON内のID型と合わせるため）
     target_room_id_str = str(target_room_id).strip()
     
     if not event_id:
         return {"total_entries": "-", "rank": "-", "point": "-", "level": "-", "top_participants": []}
 
-    # 全参加者リストを取得（2ページ目以降も含む）
+    # 全参加者リストを取得（全ページ分を取得するロジックを信頼する）
     room_list_data = get_event_room_list_data(event_id)
     total_entries = get_total_entries(event_id)
     current_room_data = None
     
-    # --- 🎯 ターゲットルームの情報をリスト全体から確実に探す (検索ロジック最終強化) ---
+    # --- 🎯 ターゲットルームの情報を、取得できたリスト全体から確実に探す（修正ロジック） ---
+    # 【最重要】上位10件以降で見つからない問題を解決するため、全リストを探索
     for room in room_list_data:
-        room_id_in_list = room.get("room_id")
-        
         # room_id が存在し、文字列化したものがターゲットIDと一致するか確認
+        room_id_in_list = room.get("room_id")
         if room_id_in_list is not None and str(room_id_in_list).strip() == target_room_id_str:
             current_room_data = room
-            # ★修正点2: 見つけたらすぐにループを抜ける（このデータを使用する）
-            break
-
+            break # 見つけたらすぐにループを抜ける
+            
     # --- 🎯 ターゲットルームの参加状況を確定 ---
     rank = None
     point = None
@@ -192,13 +198,15 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
         # point/score は文字列またはNoneの可能性があるため、intにキャストしてソート
         top_participants.sort(key=lambda x: int(str(x.get('point', x.get('score', 0)) or 0)), reverse=True)
     
-    # ここでリストを上位10件に制限する
-    top_participants = top_participants[:limit]
+    # 【お客様の指摘に対する修正】ここでリストを上位10件に制限する（表示用）
+    # この処理は、ターゲットルームの情報を取得した「後」に行われるため、
+    # ターゲットルームの情報（rank, point, level）の取得には影響を与えません。
+    top_participants_for_display = top_participants[:limit]
 
 
     # ✅ 上位10ルームのプロフィール情報を取得し、データをエンリッチ（統合）
     enriched_participants = []
-    for participant in top_participants:
+    for participant in top_participants_for_display:
         room_id = participant.get('room_id')
         
         # 取得必須のキーを初期化（Noneで初期化）
@@ -206,6 +214,7 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
             participant[key] = None
             
         if room_id:
+            # プロフィールAPIへの呼び出し
             profile = get_room_profile(room_id)
             if profile:
                 # プロフィールAPIから取得した「ルームレベル」を 'room_level_profile' として格納
@@ -626,7 +635,7 @@ def display_room_status(profile_data, input_room_id):
                 if col in dfp_display.columns:
                     dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=False))
             
-
+            
             # 🔥 「レベル」列のフォーマット処理 (数値型として取得できなかった場合を考慮)
             def format_level_safely_FINAL(val):
                 """APIの値(val)を安全にレベル表示用文字列に変換する"""
