@@ -349,6 +349,10 @@ def display_room_status(profile_data, input_room_id):
     /* st.metric の値を強制的に揃える (イベント情報セクション用) */
     .stMetric label {
         font-size: 14px; 
+        color: #666; 
+        font-weight: 600;
+        margin-bottom: 5px;
+        display: block; 
     }
     .stMetric > div > div:nth-child(2) > div {
         font-size: 24px !important; 
