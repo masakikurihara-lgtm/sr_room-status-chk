@@ -198,16 +198,23 @@ def display_room_status(profile_data, input_room_id):
     
     room_url = f"https://www.showroom-live.com/room/profile?room_id={input_room_id}"
     
-    # --- 💡 カスタムCSSの定義（タイトル領域用） ---
-    # タイトルを独立させ、背景色とパディングを設定するCSS
-    title_style = """
+    
+    # --- 💡 カスタムCSSの定義（タイトル領域、項目値の統一） ---
+    # タイトル領域のスタイルと、ルーム基本情報で使用するカスタム要素のスタイルを定義
+    custom_styles = """
     <style>
+    /* 全体のフォント統一と余白調整 */
+    h3 { 
+        margin-top: 20px; 
+        padding-top: 10px; 
+        border-bottom: 2px solid #ff4b4b; /* セクション見出しの下線 */
+    }
+
     /* タイトル領域のスタイル */
     .room-title-container {
         padding: 15px 20px;
         margin-bottom: 20px;
         border-radius: 8px;
-        /* 背景色をStreamlitのプライマリカラーに近い色に設定 */
         background-color: #f0f2f6; 
         border: 1px solid #e6e6e6;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
@@ -221,17 +228,70 @@ def display_room_status(profile_data, input_room_id):
         font-size: 28px; 
     }
     .room-title-container .title-icon {
-        font-size: 30px; /* アイコンサイズ */
+        font-size: 30px; 
         margin-right: 15px;
-        color: #ff4b4b; /* アクセントカラー */
+        color: #ff4b4b; 
     }
     .room-title-container a {
-        text-decoration: none; /* リンクの下線を削除 */
-        color: #1c1c1c; /* 文字色 */
+        text-decoration: none; 
+        color: #1c1c1c; 
+    }
+    
+    /* 🚀 ルーム基本情報のカスタムメトリック用スタイル */
+    .custom-metric-container {
+        margin-bottom: 10px;
+        padding: 5px 0;
+    }
+    .metric-label {
+        font-size: 14px; /* ラベルのフォントサイズを統一 */
+        color: #666; 
+        font-weight: 600;
+        margin-bottom: 5px;
+        display: block; /* ブロック要素にして縦の並びを確保 */
+    }
+    .metric-value {
+        font-size: 24px; /* 値のフォントサイズを統一 */
+        font-weight: bold;
+        line-height: 1.1;
+        color: #1c1c1c;
+    }
+    .metric-sub-value {
+        font-size: 18px; /* スコアなどのサブの値 */
+        font-weight: 600;
+        line-height: 1.1;
+        color: #555;
+    }
+    
+    /* st.metric の値を強制的に揃える (イベント情報セクション用) */
+    .stMetric label {
+        font-size: 14px; 
+    }
+    .stMetric > div > div:nth-child(2) > div {
+        font-size: 24px !important; /* st.metric の値のフォントサイズを統一 */
+        font-weight: bold;
     }
     </style>
     """
-    st.markdown(title_style, unsafe_allow_html=True)
+    st.markdown(custom_styles, unsafe_allow_html=True)
+
+    # ヘルパー関数: カスタムスタイルを適用したメトリックを表示
+    def custom_metric(label, value, is_sub_value=False):
+        value_class = "metric-sub-value" if is_sub_value else "metric-value"
+        # 公式/フリーの特別な表示をサポート
+        if label == "公式 or フリー":
+            color = "green" if is_official is True else "orange" if is_official is False else "gray"
+            styled_value = f'<span style="color:{color};">{value}</span>'
+        else:
+            styled_value = value
+            
+        st.markdown(
+            f'<div class="custom-metric-container">'
+            f'<span class="metric-label">{label}</span>'
+            f'<div class="{value_class}">{styled_value}</div>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
 
     # --- 1. 🎤 ルーム名/ID (タイトル領域) ---
     st.markdown(
@@ -245,41 +305,26 @@ def display_room_status(profile_data, input_room_id):
     # --- 2. 📊 ルーム基本情報（第一カテゴリー） ---
     st.markdown("### 📊 ルーム基本情報")
     
-    # 4列に分割して、情報を表形式で表示
     col1, col2, col3, col4 = st.columns(4)
 
-    # Note: 取得データがint型か確認し、カンマ区切りを適用
     # ▼ 左側：レベル/フォロワー/配信日数
     with col1:
-        st.markdown(f"**ルームレベル**")
-        st.markdown(f"### {f'{room_level:,}' if isinstance(room_level, int) else str(room_level)}")
-        
-        st.markdown(f"**フォロワー数**")
-        st.markdown(f"### {f'{follower_num:,}' if isinstance(follower_num, int) else str(follower_num)}")
+        custom_metric("ルームレベル", f'{room_level:,}' if isinstance(room_level, int) else str(room_level))
+        custom_metric("フォロワー数", f'{follower_num:,}' if isinstance(follower_num, int) else str(follower_num))
         
     with col2:
-        st.markdown(f"**まいにち配信（日数）**")
-        st.markdown(f"### {live_continuous_days}")
-        
-        st.markdown(f"**公式 or フリー**")
-        # 公式/フリーを色付け
-        color = "green" if is_official is True else "orange" if is_official is False else "gray"
-        st.markdown(f"### :{color}[{official_status}]")
+        custom_metric("まいにち配信（日数）", live_continuous_days)
+        custom_metric("公式 or フリー", official_status)
 
     # ▼ 右側：SHOWランク関連情報
     with col3:
-        st.markdown(f"**現在のSHOWランク**")
-        st.markdown(f"### {show_rank}")
-        
-        st.markdown(f"**ジャンル**")
-        st.markdown(f"### {genre_name}")
+        custom_metric("現在のSHOWランク", show_rank)
+        custom_metric("ジャンル", genre_name)
 
     with col4:
-        st.markdown(f"**上位ランクまでのスコア**")
-        st.markdown(f"#### {f'{next_score:,}' if isinstance(next_score, int) else str(next_score)}")
-        
-        st.markdown(f"**下位ランクまでのスコア**")
-        st.markdown(f"#### {f'{prev_score:,}' if isinstance(prev_score, int) else str(prev_score)}")
+        # スコアは少し小さめのフォントを使用
+        custom_metric("上位ランクまでのスコア", f'{next_score:,}' if isinstance(next_score, int) else str(next_score), is_sub_value=True)
+        custom_metric("下位ランクまでのスコア", f'{prev_score:,}' if isinstance(prev_score, int) else str(prev_score), is_sub_value=True)
 
 
     st.divider()
@@ -327,15 +372,13 @@ def display_room_status(profile_data, input_room_id):
             top_participants = event_info["top_participants"]
             
             st.markdown("#### 参加状況（自己ルーム）")
-            # イベント参加情報表示 (4カラムで横並び) - st.metric を使用して強調
+            # イベント参加情報表示 (4カラムで横並び) - st.metric を使用
             event_col_data1, event_col_data2, event_col_data3, event_col_data4 = st.columns(4)
             with event_col_data1:
                 st.metric(label="参加ルーム数", value=f"{total_entries:,}" if isinstance(total_entries, int) else str(total_entries), delta_color="off")
             with event_col_data2:
-                # 順位を強調
                 st.metric(label="現在の順位", value=str(rank), delta_color="off")
             with event_col_data3:
-                # ポイントを強調
                 st.metric(label="獲得ポイント", value=f"{point:,}" if isinstance(point, int) else str(point), delta_color="off")
             with event_col_data4:
                 st.metric(label="レベル", value=str(level), delta_color="off")
@@ -444,11 +487,7 @@ def display_room_status(profile_data, input_room_id):
 
             # コンパクトに expander 内で表示
             with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
-                # 見栄え改善のためのカスタムCSS
-                # 1. ヘッダーの背景色を強調
-                # 2. 列間のスペースを調整し、よりコンパクトに
-                # 3. 数値列の右寄せを強化
-                # 4. 行のホバー効果を追加
+                # 見栄え改善のためのカスタムCSS (テーブル用)
                 table_style = """
                 <style>
                 /* テーブル全体のスタイル */
