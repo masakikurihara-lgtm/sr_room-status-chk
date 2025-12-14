@@ -490,6 +490,57 @@ def display_room_status(profile_data, input_room_id):
         background-color: #f7f9fd; 
     }
     
+    /* ******************************************* */
+    /* 🔥 新規追加: イベント参加状況テーブル専用CSS */
+    /* ******************************************* */
+    
+    /* イベント参加状況テーブルのラッパー */
+    .event-info-table-wrapper {
+        width: 100%;
+        max-width: 800px; /* 基本情報テーブルより少し狭くても可 */
+        margin: 0 auto;
+        overflow-x: auto;
+    }
+    
+    /* イベント参加状況テーブル本体 */
+    .event-info-table {
+        border-collapse: collapse;
+        width: 100%; 
+        margin-top: 10px;
+        table-layout: fixed; /* レイアウトを固定 */
+    }
+
+    /* ヘッダーセル (<th>) - デザインを統一 */
+    .event-info-table th {
+        text-align: center !important; 
+        background-color: #e3f2fd; /* 少し薄い青 */
+        color: #0d47a1; 
+        font-weight: bold;
+        padding: 8px 10px; 
+        border-top: 1px solid #90caf9; 
+        border-bottom: 1px solid #90caf9; 
+        white-space: nowrap;
+        width: 25%; /* 4項目で均等に分割 */
+    }
+    
+    /* データセル (<td>) - デザインを統一 */
+    .event-info-table td {
+        text-align: center !important; 
+        padding: 6px 10px; 
+        line-height: 1.4;
+        border-bottom: 1px solid #f0f0f0;
+        white-space: nowrap;
+        width: 25%; /* 4項目で均等に分割 */
+        font-weight: 600; 
+        font-size: 18px; /* 値を強調 */
+    }
+    
+    /* ホバーエフェクトの維持 */
+    .event-info-table tbody tr:hover {
+        background-color: #f7f9fd; 
+    }
+
+    
     </style>
     """
     st.markdown(custom_styles, unsafe_allow_html=True) # カスタムCSSの適用を維持
@@ -621,45 +672,49 @@ def display_room_status(profile_data, input_room_id):
             point = event_info["point"]
             level = event_info["level"] # ターゲットルームのレベル
             
-            # イベント参加情報表示 (4カラムで横並び) - st.metric を使用
+            # ▼ 参加状況（自己ルーム）の表示項目と項目値のテーブル化
             st.markdown("#### 参加状況（自己ルーム）")
-            event_col_data1, event_col_data2, event_col_data3, event_col_data4 = st.columns([1, 1, 1, 1])
-            with event_col_data1:
-                st.metric(label="参加ルーム数", value=f"{total_entries:,}" if isinstance(total_entries, int) else str(total_entries), delta_color="off")
-            with event_col_data2:
-                # 順位は確定した値を使用
-                rank_display = str(rank)
-                # ★修正: ハイフンでなければ数値としてカンマ区切りに変換
-                if rank != '-':
-                    try:
-                        # 整数に変換できるか試す
-                        rank_display = f"{int(rank):,}"
-                    except (ValueError, TypeError):
-                        # 変換できなければ元の文字列表示
-                        pass
-                st.metric(label="現在の順位", value=rank_display, delta_color="off")
 
-            with event_col_data3:
-                # 獲得ポイントは確定した値を使用
-                point_display = str(point)
-                # ★修正: ハイフンでなければ数値としてカンマ区切りに変換
-                if point != '-':
-                    try:
-                        point_display = f"{int(point):,}"
-                    except (ValueError, TypeError):
-                        pass
-                st.metric(label="獲得ポイント", value=point_display, delta_color="off")
-
-            with event_col_data4:
-                # レベルは確定した値を使用
-                level_display = str(level)
-                # ★修正: ハイフンでなければ数値としてカンマ区切りに変換
-                if level != '-':
-                    try:
-                        level_display = f"{int(level):,}"
-                    except (ValueError, TypeError):
-                        pass
-                st.metric(label="レベル", value=level_display, delta_color="off")
+            def format_event_value(value):
+                if value == "-" or value is None:
+                    return "-"
+                try:
+                    # intに変換できる数値のみカンマ区切り
+                    if isinstance(value, (int, float)) or (isinstance(value, str) and str(value).isdigit()):
+                        return f"{int(value):,}"
+                    return str(value)
+                except (ValueError, TypeError):
+                    return str(value)
+                    
+            # テーブルヘッダーとデータの定義
+            event_headers = ["参加ルーム数", "現在の順位", "獲得ポイント", "レベル"]
+            event_values = [
+                format_event_value(total_entries),
+                format_event_value(rank),
+                format_event_value(point),
+                format_event_value(level)
+            ]
+            
+            # HTMLテーブルの構築
+            event_html_content = f"""
+            <div class="event-info-table-wrapper">
+                <table class="event-info-table">
+                    <thead>
+                        <tr>
+                            {"".join(f'<th>{h}</th>' for h in event_headers)}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            {"".join(f'<td>{v}</td>' for v in event_values)}
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            """
+            # Markdownで出力
+            st.markdown(event_html_content, unsafe_allow_html=True)
+            # ▲ 参加状況（自己ルーム）の表示項目と項目値のテーブル化ここまで
             
             top_participants = event_info["top_participants"]
 
@@ -900,11 +955,3 @@ if st.session_state.authenticated:
             display_room_status(room_profile, st.session_state.input_room_id)
         else:
             st.error(f"ルームID {st.session_state.input_room_id} の情報を取得できませんでした。IDを確認してください。")
-            
-    st.markdown("---")
-    
-    if st.button("認証を解除する", help="認証状態をリセットし、認証コード入力画面に戻ります"):
-        st.session_state.authenticated = False
-        st.session_state.show_status = False
-        st.session_state.input_room_id = ""
-        st.rerun()
