@@ -137,15 +137,25 @@ def resolve_organizer_name(organizer_id, official_status):
     if official_status != "公式":
         return "フリー"
 
+    if organizer_id in (None, "-", 0):
+        return "-"
+
     try:
         df = pd.read_csv(
             "https://mksoul-pro.com/showroom/file/organizer_list.csv",
-            sep="\t"
+            sep="\t",
+            dtype={0: str}   # ★ 明示的に文字列として読む
         )
-        row = df[df.iloc[:, 0] == organizer_id]
+
+        organizer_id_str = str(int(organizer_id))  # ★ int → str に正規化
+
+        row = df[df.iloc[:, 0] == organizer_id_str]
         if not row.empty:
             return row.iloc[0, 1]
-        return str(organizer_id)
+
+        # CSVに存在しない場合はID表示（要件通り）
+        return organizer_id_str
+
     except Exception:
         return str(organizer_id)
 
