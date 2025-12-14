@@ -114,51 +114,71 @@ def count_valid_avatars(profile_data):
     return count
 
 
-def get_room_event_meta(event_id, room_id):
-    if not event_id:
-        return "-", "-"
+def get_room_event_meta(profile_event_id, room_id):
+    """
+    ルーム作成日時・オーガナイザーID取得
+    条件① profile.event.event_id
+    条件③ event_liver_list.csv
+    """
+    checked_event_ids = []
 
-    rooms = get_event_room_list_data(event_id)
-    for r in rooms:
-        if str(r.get("room_id")) == str(room_id):
-            created_at = r.get("created_at")
-            organizer_id = r.get("organizer_id")
-            created_str = "-"
-            if created_at:
-                created_str = datetime.datetime.fromtimestamp(
-                    created_at, JST
-                ).strftime("%Y/%m/%d %H:%M:%S")
-            return created_str, organizer_id
+    # --- 条件① ---
+    if profile_event_id:
+        checked_event_ids.append(profile_event_id)
 
+    # --- 条件③ ---
+    fallback_event_id = get_event_id_from_event_liver_list(room_id)
+    if fallback_event_id:
+        checked_event_ids.append(fallback_event_id)
+
+    # --- イベントID候補を順に試す ---
+    for event_id in checked_event_ids:
+        rooms = get_event_room_list_data(event_id)
+        for r in rooms:
+            if str(r.get("room_id")) == str(room_id):
+                created_at = r.get("created_at")
+                organizer_id = r.get("organizer_id")
+
+                created_str = "-"
+                if created_at:
+                    created_str = datetime.datetime.fromtimestamp(
+                        created_at, JST
+                    ).strftime("%Y/%m/%d %H:%M:%S")
+
+                return created_str, organizer_id
+
+    # --- 条件④ ---
     return "-", "-"
 
 
-def resolve_organizer_name(organizer_id, official_status):
+def resolve_organizer_name(organizer_id, official_status, room_id):
+    # --- フリー ---
     if official_status != "公式":
         return "フリー"
 
+    # --- 条件②：MKsoul ---
+    if is_mksoul_room(room_id):
+        return "MKsoul"
+
+    # --- 条件①：既存オーガナイザー ---
     if organizer_id in (None, "-", 0):
         return "-"
 
     organizer_id_str = str(int(organizer_id))
 
     try:
-        # ★ 区切りを指定しない（pandasに自動判定させる）
         df = pd.read_csv(
             "https://mksoul-pro.com/showroom/file/organizer_list.csv",
             engine="python"
         )
 
-        # ★ 1列で読まれてしまった場合の救済
         if df.shape[1] == 1:
-            # 全行を分割して DataFrame を再構築
-            split_rows = df.iloc[:, 0].astype(str).str.split(r"\s+", n=1, expand=True)
-            split_rows.columns = ["organizer_id", "organizer_name"]
-            df = split_rows
+            split = df.iloc[:, 0].astype(str).str.split(r"\s+", n=1, expand=True)
+            split.columns = ["organizer_id", "organizer_name"]
+            df = split
         else:
             df.columns = ["organizer_id", "organizer_name"]
 
-        # ★ 正規化
         df["organizer_id"] = df["organizer_id"].astype(str).str.strip()
         df["organizer_name"] = df["organizer_name"].astype(str).str.strip()
 
@@ -170,6 +190,34 @@ def resolve_organizer_name(organizer_id, official_status):
 
     except Exception:
         return organizer_id_str
+
+
+def is_mksoul_room(room_id):
+    try:
+        df = pd.read_csv(
+            "https://mksoul-pro.com/showroom/file/room_list.csv",
+            dtype=str
+        )
+        room_ids = set(df.iloc[1:, 0].astype(str).str.strip())
+        return str(room_id) in room_ids
+    except Exception:
+        return False
+
+
+def get_event_id_from_event_liver_list(room_id):
+    try:
+        df = pd.read_csv(
+            "https://mksoul-pro.com/showroom/file/event_liver_list.csv",
+            header=None,
+            names=["room_id", "event_id"],
+            dtype=str
+        )
+        row = df[df["room_id"] == str(room_id)]
+        if not row.empty:
+            return row.iloc[0]["event_id"]
+        return None
+    except Exception:
+        return None
 
 
 
@@ -803,7 +851,7 @@ def display_room_status(profile_data, input_room_id):
 
     event_id = _safe_get(profile_data, ["event", "event_id"], None)
     created_at, organizer_id = get_room_event_meta(event_id, input_room_id)
-    organizer_name = resolve_organizer_name(organizer_id, official_status)
+    organizer_name = resolve_organizer_name(organizer_id, official_status, input_room_id)
 
     headers2 = [
         "今月のファン数/ファンパワー",
