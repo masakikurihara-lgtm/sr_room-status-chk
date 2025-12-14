@@ -641,7 +641,12 @@ def display_room_status(profile_data, input_room_id):
     st.divider()
 
     # --- 3. 🏆 現在の参加イベント情報（第二カテゴリー） ---
-    st.markdown("### 🏆 現在の参加イベント情報")
+    # st.markdown("### 🏆 現在の参加イベント情報")
+
+    st.markdown(
+        "<h1 style='font-size:22px; text-align:left; color:#1f2937; padding: 5px 0px 0px 0px;'>🏆 現在の参加イベント情報</h1>",
+        unsafe_allow_html=True
+    )
 
     event_id = event.get("event_id")
     event_name = event.get("name", "現在イベントに参加していません")
