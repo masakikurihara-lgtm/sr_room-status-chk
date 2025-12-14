@@ -696,7 +696,12 @@ def display_room_status(profile_data, input_room_id):
             level = event_info["level"] # ターゲットルームのレベル
             
             # ▼ 参加状況（自己ルーム）の表示項目と項目値のテーブル化
-            st.markdown("#### 参加状況（自己ルーム）")
+            # st.markdown("#### 参加状況（自己ルーム）")
+
+            st.markdown(
+                "<h1 style='font-size:19px; text-align:left; color:#1f2937; padding: 5px 0px 0px 0px;'>参加状況（自己ルーム）</h1>",
+                unsafe_allow_html=True
+            )
 
             def format_event_value(value):
                 if value == "-" or value is None:
