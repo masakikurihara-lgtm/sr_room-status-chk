@@ -889,7 +889,7 @@ def display_room_status(profile_data, input_room_id):
             ]
             
             # コンパクトに expander 内で表示
-            with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
+            with st.expander("参加ルーム一覧（上位10ルーム）", expanded=True):
                 
                 html_table = dfp_display.to_html(
                     escape=False, 
