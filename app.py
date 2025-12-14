@@ -4,7 +4,6 @@ import pandas as pd
 import io
 import datetime
 from dateutil import parser
-import time
 import numpy as np
 import re
 import json
@@ -982,7 +981,6 @@ if st.session_state.authenticated:
     if st.button("ルームステータスを表示"):
         if st.session_state.input_room_id and st.session_state.input_room_id.isdigit():
             st.session_state.show_status = True
-            st.caption(f"（取得時刻: {datetime.now(JST).strftime('%Y/%m/%d %H:%M:%S')} 現在）")
         elif st.session_state.input_room_id:
             st.error("ルームIDは数字で入力してください。")
         else:
