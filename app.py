@@ -33,7 +33,7 @@ def _safe_get(data, keys, default_value=None):
     temp = data
     for key in keys:
         if isinstance(temp, dict) and key in temp:
-            temp = temp = temp.get(key)
+            temp = temp.get(key)
         else:
             return default_value
     # 取得した値がNone、空の文字列、またはNaNの場合もデフォルト値を返す
@@ -468,23 +468,39 @@ def display_room_status(profile_data, input_room_id):
     
     # --- 2. 📊 ルーム基本情報（第一カテゴリー） ---
     st.markdown("### 📊 ルーム基本情報")
-    col1, col2, col3, col4 = st.columns([1.5, 1.5, 1.5, 1.5]) 
+    
+    # 4カラムで定義 (比率は均等)
+    col1, col2, col3, col4 = st.columns([1, 1.5, 1, 1]) 
 
+    # 要件の表示順序:
+    # 1. ルームレベル
+    # 2. 現在のSHOWランク
+    # 3. 上位SHOWランクまでのスコア
+    # 4. 下位SHOWランクまでのスコア
+    # 5. フォロワー数
+    # 6. まいにち配信
+    # 7. 公式 or フリー
+    # 8. ジャンル
+
+    # ▼ 1列目 (ルームレベル, フォロワー数)
     with col1:
-        custom_metric("ルームレベル", f'{room_level:,}' if isinstance(room_level, int) else str(room_level))
-        custom_metric("フォロワー数", f'{follower_num:,}' if isinstance(follower_num, int) else str(follower_num))
+        custom_metric("ルームレベル", f'{room_level:,}' if isinstance(room_level, int) else str(room_level)) # 1
+        custom_metric("フォロワー数", f'{follower_num:,}' if isinstance(follower_num, int) else str(follower_num)) # 5
         
+    # ▼ 2列目 (ランク, 上位スコア, 下位スコア) - セットで表示
     with col2:
-        custom_metric("まいにち配信（日数）", live_continuous_days)
-        custom_metric("公式 or フリー", official_status)
+        custom_metric("現在のSHOWランク", show_rank) # 2
+        custom_metric("上位ランクまでのスコア", f'{next_score:,}' if isinstance(next_score, int) else str(next_score)) # 3
+        custom_metric("下位ランクまでのスコア", f'{prev_score:,}' if isinstance(prev_score, int) else str(prev_score)) # 4
 
+    # ▼ 3列目 (まいにち配信, 公式 or フリー)
     with col3:
-        custom_metric("現在のSHOWランク", show_rank)
-        custom_metric("ジャンル", genre_name)
+        custom_metric("まいにち配信（日数）", live_continuous_days) # 6
+        custom_metric("公式 or フリー", official_status) # 7
 
+    # ▼ 4列目 (ジャンル)
     with col4:
-        custom_metric("上位ランクまでのスコア", f'{next_score:,}' if isinstance(next_score, int) else str(next_score))
-        custom_metric("下位ランクまでのスコア", f'{prev_score:,}' if isinstance(prev_score, int) else str(prev_score))
+        custom_metric("ジャンル", genre_name) # 8
 
 
     st.divider()
