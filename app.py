@@ -511,7 +511,7 @@ def display_room_status(profile_data, input_room_id):
         border-collapse: collapse;
         width: 100%; 
         margin-top: 10px;
-        table-layout: fixed; /* レイアウトを固定 */
+        /*table-layout: fixed;*/ /* レイアウトを固定 */
     }
 
     /* ヘッダーセル (<th>) - デザインを統一 */
