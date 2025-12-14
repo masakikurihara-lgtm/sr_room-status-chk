@@ -8,6 +8,8 @@ import numpy as np
 import re
 import json
 
+JST = datetime.timezone(datetime.timedelta(hours=9))
+
 # Streamlit の初期設定
 st.set_page_config(
     page_title="SHOWROOM ルームステータス確認ツール",
@@ -268,6 +270,11 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
 
 def display_room_status(profile_data, input_room_id):
     """取得したルームプロフィールデータとイベントデータを表示する"""
+
+    # ★ 取得時刻表示（JST）
+    st.caption(
+        f"（取得時刻: {datetime.datetime.now(JST).strftime('%Y/%m/%d %H:%M:%S')} 現在）"
+    )
     
     # データを安全に取得
     room_name = _safe_get(profile_data, ["room_name"], "取得失敗")
