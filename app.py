@@ -209,6 +209,29 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     level = "-" if level is None else level
     # ------------------------------------------------------------------------------------
 
+    # --- 全参加者のリストにターゲットルームの情報が含まれているか確認し、含まれていなければ追加（重要） ---
+    if current_room_data is None and target_room_id_str not in [str(r.get('room_id')) for r in room_list_data]:
+        # イベントリストに載っていなかった場合、最低限の情報を手動で構築し、リストに追加（ランキング圏外だが参加はしている場合など）
+        room_name_from_profile = None
+        if total_entries != 0 and total_entries != 'N/A':
+            # 参加者がいるのにリストにない場合は、ポイント0などとして手動追加
+            profile = get_room_profile(target_room_id)
+            if profile:
+                room_name_from_profile = _safe_get(profile, ["room_name"], f"Room {target_room_id}")
+            
+            room_list_data.append({
+                "room_id": target_room_id,
+                "room_name": room_name_from_profile,
+                "rank": total_entries, # 参加者数と同等の順位（最下位付近の暫定値）
+                "point": 0,
+                # その他の情報はNoneにしておく
+            })
+            # ターゲットルームのデータもこれで更新
+            current_room_data = room_list_data[-1] 
+            rank = total_entries
+            point = 0
+            level = "-"
+
     # --- 上位10ルームのリストを作成し、エンリッチメント処理に進む ---
     top_participants = room_list_data
     if top_participants:
@@ -218,6 +241,14 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
     # 上位10件に制限する（表示用）
     top_participants_for_display = top_participants[:limit]
 
+    # --- ターゲットルームが上位10件に含まれているか確認し、含まれていなければ追加 ---
+    target_in_top_list = any(str(r.get('room_id')) == target_room_id_str for r in top_participants_for_display)
+    
+    if not target_in_top_list and current_room_data:
+        # 上位10件に含まれていない場合は、自身のルームを最後に追加
+        # そのために、現在のルームのデータに特別なマークを付ける
+        current_room_data['is_target_room'] = True
+        top_participants_for_display.append(current_room_data)
 
     # ✅ 上位10ルームのプロフィール情報を取得し、データをエンリッチ（統合）
     enriched_participants = []
@@ -226,30 +257,32 @@ def get_event_participants_info(event_id, target_room_id, limit=10):
         
         # 取得必須のキーを初期化（Noneで初期化）
         for key in ['room_level_profile', 'show_rank_subdivided', 'follower_num', 'live_continuous_days', 'is_official_api']: 
-            participant[key] = None
+            if key not in participant:
+                participant[key] = None
             
         if room_id:
             # プロフィールAPIへの呼び出し
-            profile = get_room_profile(room_id)
-            if profile:
-                # プロフィールAPIから取得した「ルームレベル」を 'room_level_profile' として格納
-                participant['room_level_profile'] = _safe_get(profile, ["room_level"], None)
-                participant['show_rank_subdivided'] = _safe_get(profile, ["show_rank_subdivided"], None)
-                participant['follower_num'] = _safe_get(profile, ["follower_num"], None)
-                participant['live_continuous_days'] = _safe_get(profile, ["live_continuous_days"], None)
-                participant['is_official_api'] = _safe_get(profile, ["is_official"], None)
-                
-                if not participant.get('room_name'):
-                    participant['room_name'] = _safe_get(profile, ["room_name"], f"Room {room_id}")
+            if str(room_id) != target_room_id_str or (str(room_id) == target_room_id_str and 'room_level_profile' not in participant):
+                profile = get_room_profile(room_id)
+                if profile:
+                    # プロフィールAPIから取得した「ルームレベル」を 'room_level_profile' として格納
+                    participant['room_level_profile'] = _safe_get(profile, ["room_level"], participant.get('room_level_profile'))
+                    participant['show_rank_subdivided'] = _safe_get(profile, ["show_rank_subdivided"], participant.get('show_rank_subdivided'))
+                    participant['follower_num'] = _safe_get(profile, ["follower_num"], participant.get('follower_num'))
+                    participant['live_continuous_days'] = _safe_get(profile, ["live_continuous_days"], participant.get('live_continuous_days'))
+                    participant['is_official_api'] = _safe_get(profile, ["is_official"], participant.get('is_official_api'))
+                    
+                    if not participant.get('room_name'):
+                        participant['room_name'] = _safe_get(profile, ["room_name"], f"Room {room_id}")
         
         # イベントの「レベル」を取得 ('event_entry.quest_level' またはその他のキーから)
-        participant['quest_level'] = _safe_get(participant, ["event_entry", "quest_level"], None)
+        participant['quest_level'] = _safe_get(participant, ["event_entry", "quest_level"], participant.get('quest_level'))
         if participant['quest_level'] is None:
-            participant['quest_level'] = _safe_get(participant, ["entry_level"], None)
+            participant['quest_level'] = _safe_get(participant, ["entry_level"], participant.get('quest_level'))
         if participant['quest_level'] is None:
-            participant['quest_level'] = _safe_get(participant, ["event_entry", "level"], None)
+            participant['quest_level'] = _safe_get(participant, ["event_entry", "level"], participant.get('quest_level'))
 
-        # 最終的に quest_level がセットされていない場合、ここでキーを追加（DataFrame化でエラーが出ないように）
+        # 最終的に quest_level がセットされていない場合、ここでキーを追加
         if 'quest_level' not in participant:
             participant['quest_level'] = None
 
@@ -286,6 +319,39 @@ def display_room_status(profile_data, input_room_id):
     genre_name = GENRE_MAP.get(genre_id, f"その他 ({genre_id})" if genre_id else "-")
     
     room_url = f"https://www.showroom-live.com/room/profile?room_id={input_room_id}"
+    
+    # --- 数値フォーマット関数（カンマ区切りを切替可能） ---
+    def _fmt_int_for_display(v, use_comma=True):
+        """数値を整形する。"""
+        try:
+            if v is None or (isinstance(v, (str, float)) and (str(v).strip() == "" or pd.isna(v) or str(v).strip() == '-')):
+                return "-"
+            num = float(v)
+            if use_comma:
+                return f"{int(num):,}"
+            else:
+                return f"{int(num)}"
+        except Exception:
+            return str(v) if str(v).strip() != "" else "-"
+    
+    # --- ルーム基本情報用のデータフレームを作成 ---
+    basic_info_data = {
+        '項目': [
+            'ルームレベル', '現在のSHOWランク', '上位ランクまでのスコア', '下位ランクまでのスコア',
+            'フォロワー数', 'まいにち配信（日数）', '公式 or フリー', 'ジャンル'
+        ],
+        '値': [
+            _fmt_int_for_display(room_level, use_comma=False),
+            show_rank,
+            _fmt_int_for_display(next_score, use_comma=True),
+            _fmt_int_for_display(prev_score, use_comma=True),
+            _fmt_int_for_display(follower_num, use_comma=True),
+            _fmt_int_for_display(live_continuous_days, use_comma=False),
+            official_status,
+            genre_name
+        ]
+    }
+    df_basic_info = pd.DataFrame(basic_info_data)
     
     
     # --- 💡 カスタムCSSの定義（中央寄せを再強化） ---
@@ -325,39 +391,43 @@ def display_room_status(profile_data, input_room_id):
         color: #1c1c1c; 
     }
     
-    /* 🚀 ルーム基本情報のカスタムメトリック用スタイル */
-    .custom-metric-container {
-        margin-bottom: 15px; 
-        padding: 5px 0;
+    /* 🚀 ルーム基本情報テーブル専用のラッパーとスタイル */
+    .basic-info-wrapper {
+        display: flex;
+        justify-content: center; /* 中央に配置 */
+        width: 100%;
+        margin-bottom: 30px;
     }
-    .metric-label {
-        font-size: 14px; 
-        color: #666; 
-        font-weight: 600;
-        margin-bottom: 5px;
-        display: block; 
+    
+    .basic-info-table {
+        width: 100%;
+        max-width: 600px; /* 基本情報テーブルの最大幅を制限 */
+        border-collapse: collapse;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     }
-    .metric-value {
-        font-size: 24px !important; 
+    
+    .basic-info-table th, .basic-info-table td {
+        padding: 10px 15px;
+        border: 1px solid #e0e0e0;
+        text-align: left;
+    }
+    
+    .basic-info-table th {
+        background-color: #f5f5f5; /* ヘッダーのような背景色 */
         font-weight: bold;
-        line-height: 1.1;
+        color: #333;
+        width: 40%; /* 項目列の幅 */
+    }
+    
+    .basic-info-table td {
+        background-color: #ffffff;
+        text-align: right; /* 値の列は右寄せ */
+        font-weight: 500;
         color: #1c1c1c;
+        width: 60%; /* 値列の幅 */
     }
     
-    /* st.metric の値を強制的に揃える (イベント情報セクション用) */
-    .stMetric label {
-        font-size: 14px; 
-        color: #666; 
-        font-weight: 600;
-        margin-bottom: 5px;
-        display: block; 
-    }
-    .stMetric > div > div:nth-child(2) > div {
-        font-size: 24px !important; 
-        font-weight: bold;
-    }
-    
-    /* HTMLテーブルのスタイル */
+    /* イベントテーブルのスタイル */
     .stHtml .dataframe {
         border-collapse: collapse;
         margin-top: 10px; 
@@ -366,96 +436,63 @@ def display_room_status(profile_data, input_room_id):
         min-width: 800px; 
     }
     
-    /* 中央寄せラッパー (テーブル全体を中央に配置) */
+    /* 中央寄せラッパー (イベントテーブル全体を中央に配置) */
     .center-table-wrapper {
-        /*display: flex;*/
         justify-content: center; 
         width: 100%;
         overflow-x: auto;
     }
 
     /*
-    🔥🔥 最終強制修正: すべての th と td の text-align をセンターに設定し、優先度を最大化
-    StreamlitがHTMLをMarkdownで出力するときに適用する可能性のある
-    .stMarkdown要素の下にあるtable.dataframeをターゲットにします。
+    イベントテーブルのth/tdスタイル
     */
     
-    /* ヘッダーセル (<th>) を強制的に中央寄せ */
+    /* イベントテーブルのヘッダーセル (<th>) を強制的に中央寄せ */
     .stMarkdown table.dataframe th {
         text-align: center !important; 
         background-color: #e8eaf6; 
         color: #1a237e; 
         font-weight: bold;
         padding: 8px 10px; 
-        /*font-size: 14px;*/
         border-top: 1px solid #c5cae9; 
         border-bottom: 1px solid #c5cae9; 
         white-space: nowrap;
     }
     
-    /* データセル (<td>) を強制的に中央寄せ */
+    /* イベントテーブルのデータセル (<td>) を強制的に中央寄せ */
     .stMarkdown table.dataframe td {
         text-align: center !important; 
         padding: 6px 10px; 
-        /*font-size: 13px;*/
         line-height: 1.4;
         border-bottom: 1px solid #f0f0f0;
         white-space: nowrap; 
     }
     
-    /* ルーム名列のデータセル (<td>) のみ、テキストを左寄せに戻す（自然な表示のため） */
-    /* 1列目 (ルーム名) のセルをターゲット */
+    /* イベントテーブルのルーム名列のデータセル (<td>) のみ、テキストを左寄せに戻す */
     .stMarkdown table.dataframe td:nth-child(1) {
-        text-align: left !important; /* ルーム名のみ左寄せに戻す */
-        min-width: 450px;
-        /*min-width: 100%; !important;*/
+        text-align: left !important; 
+        min-width: 300px; 
         white-space: normal !important; 
     }
 
-    /* ルーム名列のヘッダーセル (<th>) は中央寄せを維持 */
+    /* イベントテーブルのルーム名列のヘッダーセル (<th>) は中央寄せを維持 */
     .stMarkdown table.dataframe th:nth-child(1) {
         text-align: center !important; 
-        min-width: 450px;
-        /*min-width: 100%; !important;*/
+        min-width: 300px; 
         white-space: normal !important; 
     }
 
-    /* 2列目以降の幅調整（中央寄せはそのまま） */
-    .stMarkdown table.dataframe th:nth-child(2), .stMarkdown table.dataframe td:nth-child(2), /* ルームレベル */
-    .stMarkdown table.dataframe th:nth-child(4), .stMarkdown table.dataframe td:nth-child(4), /* フォロワー数 */
-    .stMarkdown table.dataframe th:nth-child(5), .stMarkdown table.dataframe td:nth-child(5), /* まいにち配信 */
-    .stMarkdown table.dataframe th:nth-child(9), .stMarkdown table.dataframe td:nth-child(9) { /* ポイント */
-        width: 10%; 
-    }
-
-    /* 中央寄せを維持しつつ幅調整 (ランク、公式 or フリー、ルームID、順位、レベル) */
-    .stMarkdown table.dataframe th:nth-child(3), .stMarkdown table.dataframe td:nth-child(3), /* ランク */
-    .stMarkdown table.dataframe th:nth-child(6), .stMarkdown table.dataframe td:nth-child(6), /* 公式 or フリー */
-    .stMarkdown table.dataframe th:nth-child(7), .stMarkdown table.dataframe td:nth-child(7), /* ルームID */
-    .stMarkdown table.dataframe th:nth-child(8), .stMarkdown table.dataframe td:nth-child(8), /* 順位 */
-    .stMarkdown table.dataframe th:nth-child(10), .stMarkdown table.dataframe td:nth-child(10) { /* レベル (最終列) */
-        width: 8%;
-    }
-    
-    /* ホバーエフェクトの維持 */
-    .stMarkdown table.dataframe tbody tr:hover {
-        background-color: #f7f9fd; 
+    /* 💥 ターゲットルームの行を目立たせるスタイル */
+    .stMarkdown table.dataframe tr.target-room-row td {
+        background-color: #ffe0b2 !important; /* 薄いオレンジ */
+        font-weight: bold;
+        border-top: 2px solid #ff9800 !important;
+        border-bottom: 2px solid #ff9800 !important;
     }
 
     </style>
     """
     st.markdown(custom_styles, unsafe_allow_html=True)
-
-    # ヘルパー関数: カスタムスタイルを適用したメトリックを表示
-    def custom_metric(label, value):
-        st.markdown(
-            f'<div class="custom-metric-container">'
-            f'<span class="metric-label">{label}</span>'
-            f'<div class="metric-value">{value}</div>'
-            f'</div>',
-            unsafe_allow_html=True
-        )
-
 
     # --- 1. 🎤 ルーム名/ID (タイトル領域) ---
     st.markdown(
@@ -466,42 +503,42 @@ def display_room_status(profile_data, input_room_id):
         unsafe_allow_html=True
     )
     
-    # --- 2. 📊 ルーム基本情報（第一カテゴリー） ---
+    # --- 2. 📊 ルーム基本情報（テーブル表示に修正） ---
     st.markdown("### 📊 ルーム基本情報")
     
-    # 4カラムで定義 (比率は均等)
-    col1, col2, col3, col4 = st.columns([1, 1.5, 1, 1]) 
+    # DataFrameをHTMLに変換し、専用のカスタムCSSを適用して表示
+    basic_info_html = df_basic_info.to_html(
+        escape=False,
+        index=False,
+        header=False,
+        classes='basic-info-table'
+    )
+    
+    # 項目と値で構成されたHTMLテーブルを直接出力
+    # `DataFrame.to_html`で作成される<table>タグを、<thead>のない<th>/<td>構造に変換
+    
+    # <thead>と<th>タグを削除
+    modified_html = basic_info_html.replace('<thead>', '').replace('</thead>', '')
+    modified_html = modified_html.replace('<tr>\n<th>項目</th>\n<th>値</th>\n</tr>', '')
+    
+    # 最初の列 (項目) を <th> に変換し、2列目 (値) を <td> に保つ
+    def modify_row(match):
+        # <td>項目</td><td>値</td></tr> の形式を <tr><th>項目</th><td>値</td></tr> に変換
+        row_content = match.group(1).strip()
+        parts = row_content.split('</td>\n<td>', 1)
+        if len(parts) == 2:
+            th_part = parts[0].replace('<tr>\n<td>', '<tr><th>')
+            td_part = parts[1].replace('</td>\n</tr>', '</td></tr>')
+            return f'{th_part}</th><td>{td_part}'
+        return match.group(0) # 変換できなかった場合は元の行を返す
 
-    # 要件の表示順序:
-    # 1. ルームレベル
-    # 2. 現在のSHOWランク
-    # 3. 上位SHOWランクまでのスコア
-    # 4. 下位SHOWランクまでのスコア
-    # 5. フォロワー数
-    # 6. まいにち配信
-    # 7. 公式 or フリー
-    # 8. ジャンル
+    modified_html = re.sub(r'(<tr>\n<td>.*?</td>\n<td>.*?</td>\n</tr>)', modify_row, modified_html, flags=re.DOTALL)
 
-    # ▼ 1列目 (ルームレベル, フォロワー数)
-    with col1:
-        custom_metric("ルームレベル", f'{room_level:,}' if isinstance(room_level, int) else str(room_level)) # 1
-        custom_metric("フォロワー数", f'{follower_num:,}' if isinstance(follower_num, int) else str(follower_num)) # 5
-        
-    # ▼ 2列目 (ランク, 上位スコア, 下位スコア) - セットで表示
-    with col2:
-        custom_metric("現在のSHOWランク", show_rank) # 2
-        custom_metric("上位ランクまでのスコア", f'{next_score:,}' if isinstance(next_score, int) else str(next_score)) # 3
-        custom_metric("下位ランクまでのスコア", f'{prev_score:,}' if isinstance(prev_score, int) else str(prev_score)) # 4
 
-    # ▼ 3列目 (まいにち配信, 公式 or フリー)
-    with col3:
-        custom_metric("まいにち配信（日数）", live_continuous_days) # 6
-        custom_metric("公式 or フリー", official_status) # 7
+    # テーブル全体を basic-info-wrapper でラップし、中央に配置
+    centered_basic_html = f'<div class="basic-info-wrapper">{modified_html}</div>'
 
-    # ▼ 4列目 (ジャンル)
-    with col4:
-        custom_metric("ジャンル", genre_name) # 8
-
+    st.markdown(centered_basic_html, unsafe_allow_html=True)
 
     st.divider()
 
@@ -544,210 +581,198 @@ def display_room_status(profile_data, input_room_id):
             event_info = get_event_participants_info(event_id, input_room_id, limit=10)
             
             total_entries = event_info["total_entries"]
-            rank = event_info["rank"]
-            point = event_info["point"]
-            level = event_info["level"] # ターゲットルームのレベル
             
-            # イベント参加情報表示 (4カラムで横並び) - st.metric を使用
-            st.markdown("#### 参加状況（自己ルーム）")
-            event_col_data1, event_col_data2, event_col_data3, event_col_data4 = st.columns([1, 1, 1, 1])
-            with event_col_data1:
-                st.metric(label="参加ルーム数", value=f"{total_entries:,}" if isinstance(total_entries, int) else str(total_entries), delta_color="off")
-            with event_col_data2:
-                # 順位は確定した値を使用
-                rank_display = str(rank)
-                # ★修正: ハイフンでなければ数値としてカンマ区切りに変換
-                if rank != '-':
-                    try:
-                        # 整数に変換できるか試す
-                        rank_display = f"{int(rank):,}"
-                    except (ValueError, TypeError):
-                        # 変換できなければ元の文字列表示
-                        pass
-                st.metric(label="現在の順位", value=rank_display, delta_color="off")
+            st.divider()
 
-            with event_col_data3:
-                # 獲得ポイントは確定した値を使用
-                point_display = str(point)
-                # ★修正: ハイフンでなければ数値としてカンマ区切りに変換
-                if point != '-':
-                    try:
-                        point_display = f"{int(point):,}"
-                    except (ValueError, TypeError):
-                        pass
-                st.metric(label="獲得ポイント", value=point_display, delta_color="off")
-
-            with event_col_data4:
-                # レベルは確定した値を使用
-                level_display = str(level)
-                # ★修正: ハイフンでなければ数値としてカンマ区切りに変換
-                if level != '-':
-                    try:
-                        level_display = f"{int(level):,}"
-                    except (ValueError, TypeError):
-                        pass
-                st.metric(label="レベル", value=level_display, delta_color="off")
+            # --- 4. 🔝 参加イベント上位10ルーム（HTMLテーブル） ---
+            st.markdown(f"### 🔝 参加イベント参加ルーム一覧（全{total_entries}ルーム中、上位10ルーム+自己ルーム）")
             
             top_participants = event_info["top_participants"]
-
-
-        st.divider()
-
-        # --- 4. 🔝 参加イベント上位10ルーム（HTMLテーブル） ---
-        st.markdown("### 🔝 参加イベント上位10ルーム")
-        
-        if top_participants:
             
-            dfp = pd.DataFrame(top_participants)
+            if top_participants:
+                
+                dfp = pd.DataFrame(top_participants)
 
-            # 必要なカラムが全て存在することを確認
-            cols = [
-                'room_name', 'room_level_profile', 'show_rank_subdivided', 'follower_num',
-                'live_continuous_days', 'room_id', 'rank', 'point',
-                'is_official_api', 'quest_level' # quest_levelを含む
-            ]
-            
-            # DataFrameに欠損しているカラムをNoneで埋める
-            for c in cols:
-                if c not in dfp.columns:
-                    dfp[c] = None
-                    
-            dfp_display = dfp[cols].copy()
-
-            # ▼ rename
-            dfp_display.rename(columns={
-                'room_name': 'ルーム名', 
-                'room_level_profile': 'ルームレベル', 
-                'show_rank_subdivided': 'ランク',
-                'follower_num': 'フォロワー数', 
-                'live_continuous_days': 'まいにち配信', 
-                'room_id': 'ルームID', 
-                'rank': '順位', 
-                'point': 'ポイント',
-                'is_official_api': 'is_official_api',
-                'quest_level': 'レベル' 
-            }, inplace=True)
-
-            # ▼ 公式 or フリー 判定関数（API情報使用）
-            def get_official_status_from_api(is_official_value):
-                """APIのis_official値に基づいて「公式」または「フリー」を判定する"""
-                if is_official_value is True:
-                    return "公式"
-                elif is_official_value is False:
-                    return "フリー"
-                else:
-                    return "不明"
-            
-            # ▼ 公式 or フリー を追加
-            dfp_display["公式 or フリー"] = dfp_display['is_official_api'].apply(get_official_status_from_api)
-            
-            dfp_display.drop(columns=['is_official_api'], inplace=True, errors='ignore')
-
-
-            # --- ▼ 数値フォーマット関数（カンマ区切りを切替可能） ▼ ---
-            def _fmt_int_for_display(v, use_comma=True):
-                """
-                数値を整形する。None, NaN, 空文字列、ハイフン以外の '-' の場合はハイフンを返す。
-                """
-                try:
-                    # None, NaN, 空文字列の場合はハイフンを返す
-                    if v is None or (isinstance(v, (str, float)) and (str(v).strip() == "" or pd.isna(v) or str(v).strip() == '-')):
-                        return "-"
-                    
-                    # 数値に変換できるか試す
-                    num = float(v)
-                    
-                    if use_comma:
-                        return f"{int(num):,}"
-                    else:
-                        return f"{int(num)}"
+                # 必要なカラムが全て存在することを確認
+                cols = [
+                    'room_name', 'room_level_profile', 'show_rank_subdivided', 'follower_num',
+                    'live_continuous_days', 'room_id', 'rank', 'point',
+                    'is_official_api', 'quest_level', 'is_target_room' # is_target_roomを含む
+                ]
+                
+                # DataFrameに欠損しているカラムをNoneで埋める
+                for c in cols:
+                    if c not in dfp.columns:
+                        dfp[c] = None
                         
-                except Exception:
-                    # 変換エラーが発生した場合、元の値を文字列として返す（またはハイフン）
-                    return str(v) if str(v).strip() != "" else "-"
+                dfp_display = dfp[cols].copy()
 
-            # --- ▼ 列ごとにフォーマット適用 ▼ ---
-            # 'ルームレベル'、'フォロワー数'、'まいにち配信'、'順位'、'ルームID' はカンマなし
-            format_cols_no_comma = ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位', 'ルームID'] 
-            # 'ポイント' はカンマあり
-            format_cols_comma = ['ポイント']
+                # ▼ rename
+                dfp_display.rename(columns={
+                    'room_name': 'ルーム名', 
+                    'room_level_profile': 'ルームレベル', 
+                    'show_rank_subdivided': 'ランク',
+                    'follower_num': 'フォロワー数', 
+                    'live_continuous_days': 'まいにち配信', 
+                    'room_id': 'ルームID', 
+                    'rank': '順位', 
+                    'point': 'ポイント',
+                    'is_official_api': 'is_official_api',
+                    'quest_level': 'レベル',
+                    'is_target_room': 'is_target_room'
+                }, inplace=True)
 
-            for col in format_cols_comma:
-                if col in dfp_display.columns:
-                    dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=True))
-            
-            for col in format_cols_no_comma:
-                if col in dfp_display.columns:
-                    dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=False))
-            
-            
-            # 🔥 「レベル」列のフォーマット処理 (数値型として取得できなかった場合を考慮)
-            def format_level_safely_FINAL(val):
-                """APIの値(val)を安全にレベル表示用文字列に変換する"""
-                if val is None or pd.isna(val) or str(val).strip() == "" or val is False or (isinstance(val, (list, tuple)) and not val):
-                    return "-"
-                else:
+                # ▼ 公式 or フリー 判定関数（API情報使用）
+                def get_official_status_from_api(is_official_value):
+                    """APIのis_official値に基づいて「公式」または「フリー」を判定する"""
+                    if is_official_value is True:
+                        return "公式"
+                    elif is_official_value is False:
+                        return "フリー"
+                    else:
+                        return "不明"
+                    
+                # ▼ 公式 or フリー を追加
+                dfp_display["公式 or フリー"] = dfp_display['is_official_api'].apply(get_official_status_from_api)
+                
+                dfp_display.drop(columns=['is_official_api'], inplace=True, errors='ignore')
+
+
+                # --- ▼ 数値フォーマット関数（カンマ区切りを切替可能） ▼ ---
+                # display_room_status内で再定義（スコープの都合）
+                def _fmt_int_for_display(v, use_comma=True):
+                    """数値を整形する。"""
                     try:
-                        # 整数に変換可能であれば整数として表示
-                        return str(int(val))
-                    except (ValueError, TypeError):
-                        # 変換できなければ文字列をそのまま返す（またはハイフン）
-                        return str(val) if str(val).strip() != "" else "-"
+                        if v is None or (isinstance(v, (str, float)) and (str(v).strip() == "" or pd.isna(v) or str(v).strip() == '-')):
+                            return "-"
+                        num = float(v)
+                        if use_comma:
+                            return f"{int(num):,}"
+                        else:
+                            return f"{int(num)}"
+                    except Exception:
+                        return str(v) if str(v).strip() != "" else "-"
 
-            if 'レベル' in dfp_display.columns:
-                dfp_display['レベル'] = dfp_display['レベル'].apply(format_level_safely_FINAL)
-            
-            
-            # 最終的な欠損値/空文字列のハイフン化（主にランクなど数値フォーマットを通らない文字列列用）
-            for col in ['ランク']: 
-                if col in dfp_display.columns:
-                    # None, NaN, 空文字列、ハイフン以外の '-' を含む場合はハイフンに変換
-                    dfp_display[col] = dfp_display[col].apply(lambda x: '-' if x is None or x == '' or pd.isna(x) or str(x).strip() == '-' else x)
+                # --- ▼ 列ごとにフォーマット適用 ▼ ---
+                # 'ルームレベル'、'フォロワー数'、'まいにち配信'、'順位'、'ルームID' はカンマなし
+                format_cols_no_comma = ['ルームレベル', 'フォロワー数', 'まいにち配信', '順位', 'ルームID'] 
+                # 'ポイント' はカンマあり
+                format_cols_comma = ['ポイント']
+
+                for col in format_cols_comma:
+                    if col in dfp_display.columns:
+                        dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=True))
+                
+                for col in format_cols_no_comma:
+                    if col in dfp_display.columns:
+                        dfp_display[col] = dfp_display[col].apply(lambda x: _fmt_int_for_display(x, use_comma=False))
+                
+                
+                # 🔥 「レベル」列のフォーマット処理 (数値型として取得できなかった場合を考慮)
+                def format_level_safely_FINAL(val):
+                    """APIの値(val)を安全にレベル表示用文字列に変換する"""
+                    if val is None or pd.isna(val) or str(val).strip() == "" or val is False or (isinstance(val, (list, tuple)) and not val):
+                        return "-"
+                    else:
+                        try:
+                            # 整数に変換可能であれば整数として表示
+                            return str(int(val))
+                        except (ValueError, TypeError):
+                            # 変換できなければ文字列をそのまま返す（またはハイフン）
+                            return str(val) if str(val).strip() != "" else "-"
+
+                if 'レベル' in dfp_display.columns:
+                    dfp_display['レベル'] = dfp_display['レベル'].apply(format_level_safely_FINAL)
+                
+                
+                # 最終的な欠損値/空文字列のハイフン化（主にランクなど数値フォーマットを通らない文字列列用）
+                for col in ['ランク']: 
+                    if col in dfp_display.columns:
+                        # None, NaN, 空文字列、ハイフン以外の '-' を含む場合はハイフンに変換
+                        dfp_display[col] = dfp_display[col].apply(lambda x: '-' if x is None or x == '' or pd.isna(x) or str(x).strip() == '-' else x)
 
 
-            # --- ルーム名をリンクに置き換える ---
-            def _make_link_final(row):
-                rid = row['ルームID'] 
-                name = row['ルーム名']
-                if not name:
-                    name = f"room_{rid}"
-                
-                # ルームIDがハイフンでない、つまり有効な値の場合のみリンクを生成
-                if rid != '-':
-                    # HTMLタグのインラインスタイルでtext-alignをリセットする試みは無効化し、CSSに任せる
-                    return f'<a href="https://www.showroom-live.com/room/profile?room_id={rid}" target="_blank">{name}</a>'
-                return name
+                # --- ルーム名をリンクに置き換える ---
+                def _make_link_final(row):
+                    rid = row['ルームID'] 
+                    name = row['ルーム名']
+                    if not name:
+                        name = f"room_{rid}"
+                    
+                    # ルームIDがハイフンでない、つまり有効な値の場合のみリンクを生成
+                    if rid != '-':
+                        return f'<a href="https://www.showroom-live.com/room/profile?room_id={rid}" target="_blank">{name}</a>'
+                    return name
 
-            # リンクを生成し、dfp_displayの'ルーム名'列を上書き
-            dfp_display['ルーム名'] = dfp_display.apply(_make_link_final, axis=1)
-            
-            # ▼ 列順をここで整える
-            dfp_display = dfp_display[
-                ['ルーム名', 'ルームレベル', 'ランク', 'フォロワー数',
-                 'まいにち配信', '公式 or フリー', 'ルームID', '順位', 'ポイント', 'レベル'] 
-            ]
-            
-            # コンパクトに expander 内で表示
-            with st.expander("参加ルーム一覧（ポイント順上位10ルーム）", expanded=True):
+                # リンクを生成し、dfp_displayの'ルーム名'列を上書き
+                dfp_display['ルーム名'] = dfp_display.apply(_make_link_final, axis=1)
                 
-                html_table = dfp_display.to_html(
-                    escape=False, 
-                    index=False, 
-                    classes='dataframe data-table data-table-full-width' 
-                )
-                
-                # HTMLを整形（改行や余分な空白を除去し、HTMLのサイズを小さくする）
-                html_table = html_table.replace('\n', '')
-                html_table = re.sub(r'>\s+<', '><', html_table)
-                
-                # テーブル全体を 'center-table-wrapper' でラップする
-                centered_html = f'<div class="center-table-wrapper">{html_table}</div>'
+                # --- 行のクラスを決定する（ターゲットルーム用） ---
+                def _set_row_class(row):
+                    # is_target_room が True の場合のみクラスを付与
+                    return 'target-room-row' if row['is_target_room'] is True else ''
 
-                # HTMLテーブルを直接 st.markdown で出力
-                st.markdown(centered_html, unsafe_allow_html=True)
+                row_classes = dfp_display.apply(_set_row_class, axis=1)
                 
-        else:
-            st.info("参加ルーム情報が取得できませんでした（ランキングイベントではない、またはデータがまだありません）。")
+                # is_target_room 列は表示しない
+                dfp_display.drop(columns=['is_target_room'], inplace=True, errors='ignore')
+
+
+                # ▼ 列順をここで整える
+                dfp_display = dfp_display[
+                    ['ルーム名', 'ルームレベル', 'ランク', 'フォロワー数',
+                     'まいにち配信', '公式 or フリー', 'ルームID', '順位', 'ポイント', 'レベル'] 
+                ]
+                
+                # コンパクトに expander 内で表示
+                with st.expander("参加ルーム一覧の詳細", expanded=True):
+                    
+                    # 行クラスを追加するためのカスタム to_html 処理
+                    html_table_parts = dfp_display.to_html(
+                        escape=False, 
+                        index=False, 
+                        classes='dataframe data-table data-table-full-width' 
+                    ).split('<tbody>')
+
+                    # <tbody> の中身を処理
+                    if len(html_table_parts) == 2:
+                        body_content = html_table_parts[1].split('</tbody>')[0]
+                        rows = body_content.strip().split('</tr>')
+                        
+                        # 行にクラスを挿入
+                        modified_rows = []
+                        for i, row in enumerate(rows):
+                            if row.strip():
+                                # クラスリストのインデックスを使用
+                                row_tag = row.strip() + '</tr>'
+                                if i < len(row_classes) and row_classes[i] == 'target-room-row':
+                                    row_tag = row_tag.replace('<tr>', '<tr class="target-room-row">', 1)
+                                modified_rows.append(row_tag)
+                        
+                        # 結合して新しいHTMLを生成
+                        modified_body = "".join(modified_rows)
+                        html_table = html_table_parts[0] + '<tbody>' + modified_body + '</tbody>' + html_table_parts[1].split('</tbody>')[1]
+                    else:
+                        # 予期せぬ形式の場合、元のto_htmlをそのまま使用（クラスなし）
+                        html_table = dfp_display.to_html(
+                            escape=False, 
+                            index=False, 
+                            classes='dataframe data-table data-table-full-width' 
+                        )
+
+
+                    # HTMLを整形（改行や余分な空白を除去し、HTMLのサイズを小さくする）
+                    html_table = html_table.replace('\n', '')
+                    html_table = re.sub(r'>\s+<', '><', html_table)
+                    
+                    # テーブル全体を 'center-table-wrapper' でラップする
+                    centered_html = f'<div class="center-table-wrapper">{html_table}</div>'
+
+                    # HTMLテーブルを直接 st.markdown で出力
+                    st.markdown(centered_html, unsafe_allow_html=True)
+                    
+            else:
+                st.info("参加ルーム情報が取得できませんでした（ランキングイベントではない、またはデータがまだありません）。")
 
     else:
         st.info("現在、このルームはイベントに参加していません。")
