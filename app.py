@@ -637,8 +637,8 @@ def display_room_status(profile_data, input_room_id):
         format_value(prev_score),
         format_value(follower_num),
         format_value(live_continuous_days),
-        official_status,
-        genre_name
+        genre_name,
+        official_status
     ]
     
     # ★ td生成
