@@ -140,24 +140,36 @@ def resolve_organizer_name(organizer_id, official_status):
     if organizer_id in (None, "-", 0):
         return "-"
 
+    organizer_id_str = str(int(organizer_id))
+
     try:
+        # ★ 区切りを指定しない（pandasに自動判定させる）
         df = pd.read_csv(
             "https://mksoul-pro.com/showroom/file/organizer_list.csv",
-            sep="\t",
-            dtype={0: str}   # ★ 明示的に文字列として読む
+            engine="python"
         )
 
-        organizer_id_str = str(int(organizer_id))  # ★ int → str に正規化
+        # ★ 1列で読まれてしまった場合の救済
+        if df.shape[1] == 1:
+            # 全行を分割して DataFrame を再構築
+            split_rows = df.iloc[:, 0].astype(str).str.split(r"\s+", n=1, expand=True)
+            split_rows.columns = ["organizer_id", "organizer_name"]
+            df = split_rows
+        else:
+            df.columns = ["organizer_id", "organizer_name"]
 
-        row = df[df.iloc[:, 0] == organizer_id_str]
+        # ★ 正規化
+        df["organizer_id"] = df["organizer_id"].astype(str).str.strip()
+        df["organizer_name"] = df["organizer_name"].astype(str).str.strip()
+
+        row = df[df["organizer_id"] == organizer_id_str]
         if not row.empty:
-            return row.iloc[0, 1]
+            return row.iloc[0]["organizer_name"]
 
-        # CSVに存在しない場合はID表示（要件通り）
         return organizer_id_str
 
     except Exception:
-        return str(organizer_id)
+        return organizer_id_str
 
 
 
