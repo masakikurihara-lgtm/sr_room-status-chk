@@ -362,7 +362,7 @@ def display_room_status(profile_data, input_room_id):
         border-collapse: collapse;
         margin-top: 10px; 
         width: 100%; 
-        max-width: 1000px; 
+        /*max-width: 1000px;*/
         min-width: 800px; 
     }
     
@@ -458,7 +458,7 @@ def display_room_status(profile_data, input_room_id):
         border-collapse: collapse;
         width: 100%; 
         margin-top: 10px;
-        table-layout: fixed; /* レイアウトを固定 */
+        /*table-layout: fixed;*/ /* レイアウトを固定 */
     }
 
     /* ヘッダーセル (<th>) - デザインを統一 (既存のe8eaf6系を使用) */
