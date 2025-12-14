@@ -575,7 +575,7 @@ def display_room_status(profile_data, input_room_id):
     # st.markdown("#### 📊 ルーム基本情報")
 
     st.markdown(
-        "<h1 style='font-size:19px; text-align:left; color:#1f2937; padding: 0rem 0px 0rem;'>📊 ルーム基本情報</h1>",
+        "<h1 style='font-size:19px; text-align:left; color:#1f2937; padding: 5px 0px 0px 0px;'>📊 ルーム基本情報</h1>",
         unsafe_allow_html=True
     )
     
