@@ -979,9 +979,9 @@ if st.session_state.authenticated:
         st.session_state.show_status = False
         
     if st.button("ルームステータスを表示"):
-        st.caption(f"（取得時刻: {datetime.now(JST).strftime('%Y/%m/%d %H:%M:%S')} 現在）")
         if st.session_state.input_room_id and st.session_state.input_room_id.isdigit():
             st.session_state.show_status = True
+            st.caption(f"（取得時刻: {datetime.now(JST).strftime('%Y/%m/%d %H:%M:%S')} 現在）")
         elif st.session_state.input_room_id:
             st.error("ルームIDは数字で入力してください。")
         else:
