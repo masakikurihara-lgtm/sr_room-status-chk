@@ -448,7 +448,7 @@ def display_room_status(profile_data, input_room_id):
     /* 基本情報テーブルのラッパー */
     .basic-info-table-wrapper {
         width: 100%;
-        max-width: 1000px; /* イベントテーブルの最大幅に合わせる */
+        /*max-width: 1000px;*/ /* イベントテーブルの最大幅に合わせる */
         margin: 0 auto; /* 中央寄せを適用 */
         overflow-x: auto;
     }
