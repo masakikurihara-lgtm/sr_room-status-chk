@@ -67,6 +67,90 @@ def get_room_profile(room_id):
     except requests.exceptions.RequestException:
         return None
 
+
+def get_monthly_fan_info(room_id, ym):
+    url = "https://www.showroom-live.com/api/active_fan/users"
+    params = {
+        "room_id": room_id,
+        "ym": ym,
+        "offset": 0,
+        "limit": 1
+    }
+    try:
+        r = requests.get(url, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        return (
+            data.get("total_user_count", "-"),
+            data.get("fan_power", "-")
+        )
+    except Exception:
+        return "-", "-"
+
+
+def get_excluded_avatar_ids():
+    url = "https://mksoul-pro.com/tool/pr-liver-update-avatar/excluded_avatar_ids.txt"
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        return set(line.strip() for line in r.text.splitlines() if line.strip().isdigit())
+    except Exception:
+        return set()
+
+
+def count_valid_avatars(profile_data):
+    avatar_list = _safe_get(profile_data, ["avatar", "list"], [])
+    if not isinstance(avatar_list, list):
+        return "-"
+
+    excluded_ids = get_excluded_avatar_ids()
+    count = 0
+
+    for url in avatar_list:
+        m = re.search(r'/avatar/(\d+)\.png', url)
+        if m and m.group(1) not in excluded_ids:
+            count += 1
+
+    return count
+
+
+def get_room_event_meta(event_id, room_id):
+    if not event_id:
+        return "-", "-"
+
+    rooms = get_event_room_list_data(event_id)
+    for r in rooms:
+        if str(r.get("room_id")) == str(room_id):
+            created_at = r.get("created_at")
+            organizer_id = r.get("organizer_id")
+            created_str = "-"
+            if created_at:
+                created_str = datetime.datetime.fromtimestamp(
+                    created_at, JST
+                ).strftime("%Y/%m/%d %H:%M:%S")
+            return created_str, organizer_id
+
+    return "-", "-"
+
+
+def resolve_organizer_name(organizer_id, official_status):
+    if official_status != "公式":
+        return "フリー"
+
+    try:
+        df = pd.read_csv(
+            "https://mksoul-pro.com/showroom/file/organizer_list.csv",
+            sep="\t"
+        )
+        row = df[df.iloc[:, 0] == organizer_id]
+        if not row.empty:
+            return row.iloc[0, 1]
+        return str(organizer_id)
+    except Exception:
+        return str(organizer_id)
+
+
+
 # --- イベント情報取得関数群 ---
 
 def get_total_entries(event_id):
@@ -677,6 +761,61 @@ def display_room_status(profile_data, input_room_id):
     
     # Markdownで出力
     st.markdown(html_content, unsafe_allow_html=True)
+
+    st.markdown(
+        "<h1 style='font-size:22px; text-align:left; color:#1f2937; padding: 20px 0px 0px 0px;'>📊 ルーム基本情報-2</h1>",
+        unsafe_allow_html=True
+    )
+
+    now = datetime.datetime.now()
+    ym_list = [
+        now.strftime("%Y%m"),
+        (now.replace(day=1) - datetime.timedelta(days=1)).strftime("%Y%m"),
+        (now.replace(day=1) - datetime.timedelta(days=32)).strftime("%Y%m")
+    ]
+
+    fan_infos = [get_monthly_fan_info(input_room_id, ym) for ym in ym_list]
+    fan_display = [f"{f} / {p}" if f != "-" else "-" for f, p in fan_infos]
+
+    avatar_count = count_valid_avatars(profile_data)
+
+    event_id = _safe_get(profile_data, ["event", "event_id"], None)
+    created_at, organizer_id = get_room_event_meta(event_id, input_room_id)
+    organizer_name = resolve_organizer_name(organizer_id, official_status)
+
+    headers2 = [
+        "今月のファン数/ファンパワー",
+        "先月のファン数/ファンパワー",
+        "先々月のファン数/ファンパワー",
+        "アバター数",
+        "ルーム作成日時",
+        "オーガナイザー"
+    ]
+
+    values2 = [
+        fan_display[0],
+        fan_display[1],
+        fan_display[2],
+        avatar_count,
+        created_at,
+        organizer_name
+    ]
+
+    html2 = f"""
+    <div class="basic-info-table-wrapper">
+    <table class="basic-info-table">
+    <thead>
+    <tr>{"".join(f"<th>{h}</th>" for h in headers2)}</tr>
+    </thead>
+    <tbody>
+    <tr>{"".join(f"<td>{v}</td>" for v in values2)}</tr>
+    </tbody>
+    </table>
+    </div>
+    """
+
+    st.markdown(html2, unsafe_allow_html=True)
+
     
     # 既存の st.columnsコードは削除済み/テーブル表示に置き換え済み
 
