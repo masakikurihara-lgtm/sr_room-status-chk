@@ -644,7 +644,7 @@ def display_room_status(profile_data, input_room_id):
     # st.markdown("### 🏆 現在の参加イベント情報")
 
     st.markdown(
-        "<h1 style='font-size:22px; text-align:left; color:#1f2937; padding: 5px 0px 0px 0px;'>🏆 現在の参加イベント情報</h1>",
+        "<h1 style='font-size:22px; text-align:left; color:#1f2937; padding: 5px 0px 10px 0px;'>🏆 現在の参加イベント情報</h1>",
         unsafe_allow_html=True
     )
 
@@ -668,6 +668,7 @@ def display_room_status(profile_data, input_room_id):
         ended_at_str = _ts_to_jst_str(ended_at_ts)
 
         # イベント名とリンク
+        # st.markdown(f"##### 🔗 **<a href='{event_url}' target='_blank'>{event_name}</a>**", unsafe_allow_html=True)
         st.markdown(f"##### 🔗 **<a href='{event_url}' target='_blank'>{event_name}</a>**", unsafe_allow_html=True)
         
         # イベント期間の表示 (2カラム)
