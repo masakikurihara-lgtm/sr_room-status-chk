@@ -986,7 +986,7 @@ if st.session_state.authenticated:
         else:
             st.warning("ルームIDを入力してください。")
 
-    st.caption(f"（取得時刻: {datetime.now(JST).strftime('%Y/%m/%d %H:%M:%S')} 現在）")
+        st.caption(f"（取得時刻: {datetime.now(JST).strftime('%Y/%m/%d %H:%M:%S')} 現在）")
             
     # st.divider()
     
