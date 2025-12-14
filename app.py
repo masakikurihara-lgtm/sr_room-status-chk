@@ -672,7 +672,13 @@ def display_room_status(profile_data, input_room_id):
         st.markdown(f"##### **<a href='{event_url}' target='_blank'>{event_name}</a>**", unsafe_allow_html=True)
         
         # イベント期間の表示 (2カラム)
-        st.markdown("#### イベント期間")
+        # st.markdown("#### イベント期間")
+
+        st.markdown(
+            "<h1 style='font-size:19px; text-align:left; color:#1f2937; padding: 5px 0px 0px 0px;'>イベント期間</h1>",
+            unsafe_allow_html=True
+        )
+
         event_col_time1, event_col_time2 = st.columns(2)
         with event_col_time1:
             st.info(f"📅 開始: **{started_at_str}**")
