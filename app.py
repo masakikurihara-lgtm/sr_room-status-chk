@@ -288,7 +288,7 @@ def display_room_status(profile_data, input_room_id):
     room_url = f"https://www.showroom-live.com/room/profile?room_id={input_room_id}"
     
     
-    # --- 💡 カスタムCSSの定義（既存と新規の分離） ---
+    # --- 💡 カスタムCSSの定義（中央寄せを再強化） ---
     custom_styles = """
     <style>
     /* 全体のフォント統一と余白調整 */
@@ -325,7 +325,7 @@ def display_room_status(profile_data, input_room_id):
         color: #1c1c1c; 
     }
     
-    /* 🚀 ルーム基本情報のカスタムメトリック用スタイル (既存コード) */
+    /* 🚀 ルーム基本情報のカスタムメトリック用スタイル */
     .custom-metric-container {
         margin-bottom: 15px; 
         padding: 5px 0;
@@ -344,7 +344,7 @@ def display_room_status(profile_data, input_room_id):
         color: #1c1c1c;
     }
     
-    /* st.metric の値を強制的に揃える (イベント情報セクション用) (既存コード) */
+    /* st.metric の値を強制的に揃える (イベント情報セクション用) */
     .stMetric label {
         font-size: 14px; 
         color: #666; 
@@ -357,7 +357,7 @@ def display_room_status(profile_data, input_room_id):
         font-weight: bold;
     }
     
-    /* HTMLテーブルのスタイル (既存のイベント上位10ルーム用) */
+    /* HTMLテーブルのスタイル */
     .stHtml .dataframe {
         border-collapse: collapse;
         margin-top: 10px; 
@@ -366,16 +366,18 @@ def display_room_status(profile_data, input_room_id):
         min-width: 800px; 
     }
     
-    /* 中央寄せラッパー (テーブル全体を中央に配置) (既存のイベント上位10ルーム用) */
+    /* 中央寄せラッパー (テーブル全体を中央に配置) */
     .center-table-wrapper {
-        /*display: flex;*/ /* 既存のコメントアウトを維持（一切変更しない） */
+        /*display: flex;*/
         justify-content: center; 
         width: 100%;
         overflow-x: auto;
     }
 
     /*
-    🔥🔥 イベントテーブル用CSS (既存コード): すべての th と td の text-align をセンターに設定し、優先度を最大化
+    🔥🔥 最終強制修正: すべての th と td の text-align をセンターに設定し、優先度を最大化
+    StreamlitがHTMLをMarkdownで出力するときに適用する可能性のある
+    .stMarkdown要素の下にあるtable.dataframeをターゲットにします。
     */
     
     /* ヘッダーセル (<th>) を強制的に中央寄せ */
@@ -439,62 +441,12 @@ def display_room_status(profile_data, input_room_id):
     .stMarkdown table.dataframe tbody tr:hover {
         background-color: #f7f9fd; 
     }
-    
-    
-    /* ******************************************* */
-    /* 🔥 新規追加: ルーム基本情報テーブル専用CSS (既存とクラス名を完全に分離) */
-    /* ******************************************* */
 
-    /* 基本情報テーブルのラッパー */
-    .basic-info-table-wrapper {
-        width: 100%;
-        max-width: 1000px; /* イベントテーブルの最大幅に合わせる */
-        margin: auto; /* 中央寄せを適用 */
-        overflow-x: auto;
-    }
-    
-    /* 基本情報テーブル本体 */
-    .basic-info-table {
-        border-collapse: collapse;
-        width: 100%; 
-        margin-top: 10px;
-        table-layout: fixed; /* レイアウトを固定 */
-    }
-
-    /* ヘッダーセル (<th>) - デザインを統一 */
-    .basic-info-table th {
-        text-align: center !important; 
-        background-color: #e8eaf6; 
-        color: #1a237e; 
-        font-weight: bold;
-        padding: 8px 10px; 
-        border-top: 1px solid #c5cae9; 
-        border-bottom: 1px solid #c5cae9; 
-        white-space: nowrap;
-        width: 12.5%; /* 8項目で均等に分割 */
-    }
-    
-    /* データセル (<td>) - デザインを統一 */
-    .basic-info-table td {
-        text-align: center !important; 
-        padding: 6px 10px; 
-        line-height: 1.4;
-        border-bottom: 1px solid #f0f0f0;
-        white-space: nowrap;
-        width: 12.5%; /* 8項目で均等に分割 */
-        font-weight: 600; /* 値を目立たせる */
-    }
-
-    /* ホバーエフェクトの維持 */
-    .basic-info-table tbody tr:hover {
-        background-color: #f7f9fd; 
-    }
-    
     </style>
     """
-    st.markdown(custom_styles, unsafe_allow_html=True) # カスタムCSSの適用を維持
+    st.markdown(custom_styles, unsafe_allow_html=True)
 
-    # ヘルパー関数: カスタムスタイルを適用したメトリックを表示（未使用になるが既存関数として維持）
+    # ヘルパー関数: カスタムスタイルを適用したメトリックを表示
     def custom_metric(label, value):
         st.markdown(
             f'<div class="custom-metric-container">'
@@ -514,20 +466,12 @@ def display_room_status(profile_data, input_room_id):
         unsafe_allow_html=True
     )
     
-    # --- 2. 📊 ルーム基本情報（テーブル化の対象） ---
+    # --- 2. 📊 ルーム基本情報（第一カテゴリー） ---
     st.markdown("### 📊 ルーム基本情報")
     
-    # 既存のst.columnsコードを削除し、HTMLテーブルに置き換える
-    
-    # データ整形関数（カンマ区切りが必要な項目用）
-    def format_value(value):
-        if value == "-" or value is None:
-            return "-"
-        try:
-            return f"{int(value):,}"
-        except (ValueError, TypeError):
-            return str(value)
-    
+    # 4カラムで定義 (比率は均等)
+    col1, col2, col3, col4 = st.columns([1, 1.5, 1, 1]) 
+
     # 要件の表示順序:
     # 1. ルームレベル
     # 2. 現在のSHOWランク
@@ -538,45 +482,26 @@ def display_room_status(profile_data, input_room_id):
     # 7. 公式 or フリー
     # 8. ジャンル
 
-    # テーブルヘッダーとデータの定義
-    headers = [
-        "ルームレベル", "現在のSHOWランク", "上位ランクまでのスコア", "下位ランクまでのスコア",
-        "フォロワー数", "まいにち配信（日数）", "公式 or フリー", "ジャンル"
-    ]
+    # ▼ 1列目 (ルームレベル, フォロワー数)
+    with col1:
+        custom_metric("ルームレベル", f'{room_level:,}' if isinstance(room_level, int) else str(room_level)) # 1
+        custom_metric("フォロワー数", f'{follower_num:,}' if isinstance(follower_num, int) else str(follower_num)) # 5
+        
+    # ▼ 2列目 (ランク, 上位スコア, 下位スコア) - セットで表示
+    with col2:
+        custom_metric("現在のSHOWランク", show_rank) # 2
+        custom_metric("上位ランクまでのスコア", f'{next_score:,}' if isinstance(next_score, int) else str(next_score)) # 3
+        custom_metric("下位ランクまでのスコア", f'{prev_score:,}' if isinstance(prev_score, int) else str(prev_score)) # 4
 
-    values = [
-        format_value(room_level),
-        show_rank,
-        format_value(next_score),
-        format_value(prev_score),
-        format_value(follower_num),
-        format_value(live_continuous_days),
-        official_status,
-        genre_name
-    ]
-    
-    # HTMLテーブルの構築
-    html_content = f"""
-    <div class="basic-info-table-wrapper">
-        <table class="basic-info-table">
-            <thead>
-                <tr>
-                    {"".join(f'<th>{h}</th>' for h in headers)}
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    {"".join(f'<td>{v}</td>' for v in values)}
-                </tr>
-            </tbody>
-        </table>
-    </div>
-    """
-    
-    # Markdownで出力
-    st.markdown(html_content, unsafe_allow_html=True)
-    
-    # 既存の st.columnsコードは削除済み
+    # ▼ 3列目 (まいにち配信, 公式 or フリー)
+    with col3:
+        custom_metric("まいにち配信（日数）", live_continuous_days) # 6
+        custom_metric("公式 or フリー", official_status) # 7
+
+    # ▼ 4列目 (ジャンル)
+    with col4:
+        custom_metric("ジャンル", genre_name) # 8
+
 
     st.divider()
 
@@ -712,7 +637,7 @@ def display_room_status(profile_data, input_room_id):
                     return "フリー"
                 else:
                     return "不明"
-                
+            
             # ▼ 公式 or フリー を追加
             dfp_display["公式 or フリー"] = dfp_display['is_official_api'].apply(get_official_status_from_api)
             
@@ -808,7 +733,6 @@ def display_room_status(profile_data, input_room_id):
                 html_table = dfp_display.to_html(
                     escape=False, 
                     index=False, 
-                    # 既存のクラス名 'dataframe' は維持
                     classes='dataframe data-table data-table-full-width' 
                 )
                 
@@ -816,9 +740,8 @@ def display_room_status(profile_data, input_room_id):
                 html_table = html_table.replace('\n', '')
                 html_table = re.sub(r'>\s+<', '><', html_table)
                 
-                # テーブル全体を 'center-table-wrapper' でラップする（既存の構造を維持し、インラインスタイルで中央寄せを強制）
-                # 既存のCSS定義に影響を与えないよう、インラインスタイルを付与
-                centered_html = f'<div class="center-table-wrapper" style="width: fit-content; margin: auto; max-width: 95%;">{html_table}</div>'
+                # テーブル全体を 'center-table-wrapper' でラップする
+                centered_html = f'<div class="center-table-wrapper">{html_table}</div>'
 
                 # HTMLテーブルを直接 st.markdown で出力
                 st.markdown(centered_html, unsafe_allow_html=True)
