@@ -497,7 +497,7 @@ def display_room_status(profile_data, input_room_id):
     /* イベント参加状況テーブルのラッパー */
     .event-info-table-wrapper {
         width: 100%;
-        max-width: 800px; /* 基本情報テーブルより少し狭くても可 */
+        /*max-width: 800px;*/ /* 基本情報テーブルより少し狭くても可 */
         margin: 0 auto;
         overflow-x: auto;
     }
@@ -945,7 +945,7 @@ if st.session_state.authenticated:
         else:
             st.warning("ルームIDを入力してください。")
             
-    st.divider()
+    # st.divider()
     
     if st.session_state.show_status and st.session_state.input_room_id:
         with st.spinner(f"ルームID {st.session_state.input_room_id} の情報を取得中..."):
