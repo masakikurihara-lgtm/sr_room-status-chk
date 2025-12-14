@@ -500,6 +500,18 @@ def display_room_status(profile_data, input_room_id):
     .basic-info-table tbody tr:hover {
         background-color: #f7f9fd; 
     }
+
+    /* 🔵 上位ランクまで30,000以内 */
+    .basic-info-highlight-upper {
+        background-color: #e3f2fd !important;
+        color: #0d47a1;
+    }
+
+    /* 🟡 下位ランクまで30,000以内 */
+    .basic-info-highlight-lower {
+        background-color: #fff9c4 !important;
+        color: #795548;
+    }
     
     /* ******************************************* */
     /* 🔥 新規追加: イベント参加状況テーブル専用CSS */
@@ -581,6 +593,13 @@ def display_room_status(profile_data, input_room_id):
     # --- 2. 📊 ルーム基本情報（テーブル化の対象） ---
     # st.markdown("#### 📊 ルーム基本情報")
 
+    # ★ 上位／下位ランクまでのスコアが 30,000 以内か判定する関数
+    def is_within_30000(value):
+        try:
+            return int(value) <= 30000
+        except (TypeError, ValueError):
+            return False
+
     st.markdown(
         "<h1 style='font-size:22px; text-align:left; color:#1f2937; padding: 5px 0px 0px 0px;'>📊 ルーム基本情報</h1>",
         unsafe_allow_html=True
@@ -622,7 +641,23 @@ def display_room_status(profile_data, input_room_id):
         genre_name
     ]
     
-    # HTMLテーブルの構築
+    # ★ td生成
+    td_html = []
+
+    for header, value in zip(headers, values):
+        css_class = ""
+
+        if header == "上位ランクまでのスコア" and is_within_30000(next_score):
+            css_class = "basic-info-highlight-upper"
+
+        if header == "下位ランクまでのスコア" and is_within_30000(prev_score):
+            css_class = "basic-info-highlight-lower"
+
+        td_html.append(f'<td class="{css_class}">{value}</td>')
+
+    td_html_str = "".join(td_html)
+
+    # HTML
     html_content = f"""
     <div class="basic-info-table-wrapper">
         <table class="basic-info-table">
@@ -633,7 +668,7 @@ def display_room_status(profile_data, input_room_id):
             </thead>
             <tbody>
                 <tr>
-                    {"".join(f'<td>{v}</td>' for v in values)}
+                    {td_html_str}
                 </tr>
             </tbody>
         </table>
