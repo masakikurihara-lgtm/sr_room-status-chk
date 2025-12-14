@@ -287,6 +287,53 @@ def display_room_status(profile_data, input_room_id):
     
     room_url = f"https://www.showroom-live.com/room/profile?room_id={input_room_id}"
     
+    # --- 数値フォーマット関数（カンマ区切りを切替可能） ---
+    def _fmt_int_for_display_basic(v, use_comma=True):
+        """数値を整形する。"""
+        try:
+            if v is None or (isinstance(v, (str, float)) and (str(v).strip() == "" or pd.isna(v) or str(v).strip() == '-')):
+                return "-"
+            num = float(v)
+            if use_comma:
+                return f"{int(num):,}"
+            else:
+                return f"{int(num)}"
+        except Exception:
+            return str(v) if str(v).strip() != "" else "-"
+    
+    # --- ルーム基本情報用のデータフレームを作成 (表示順とカラムヘッダーを定義) ---
+    basic_info_data = {
+        # データとして使う値 (フォーマット済み、または文字列)
+        'ルームレベル_VAL': _fmt_int_for_display_basic(room_level, use_comma=False),
+        'ランク_VAL': show_rank,
+        '上位スコア_VAL': _fmt_int_for_display_basic(next_score, use_comma=True),
+        '下位スコア_VAL': _fmt_int_for_display_basic(prev_score, use_comma=True),
+        'フォロワー数_VAL': _fmt_int_for_display_basic(follower_num, use_comma=True),
+        'まいにち配信_VAL': _fmt_int_for_display_basic(live_continuous_days, use_comma=False),
+        '公式orフリー_VAL': official_status,
+        'ジャンル_VAL': genre_name
+    }
+    
+    # データフレームに変換 (1行8列のDataFrameを作成)
+    df_basic_info = pd.DataFrame([basic_info_data])
+    
+    # カラム名を表示用のヘッダーにリネーム
+    df_basic_info.rename(columns={
+        'ルームレベル_VAL': 'ルームレベル',
+        'ランク_VAL': '現在のSHOWランク',
+        '上位スコア_VAL': '上位ランクまでのスコア',
+        '下位スコア_VAL': '下位ランクまでのスコア',
+        'フォロワー数_VAL': 'フォロワー数',
+        'まいにち配信_VAL': 'まいにち配信（日数）',
+        '公式orフリー_VAL': '公式 or フリー',
+        'ジャンル_VAL': 'ジャンル'
+    }, inplace=True)
+    
+    # 表示順序に合わせるためにカラムを並び替え
+    df_basic_info = df_basic_info[[
+        'ルームレベル', '現在のSHOWランク', '上位ランクまでのスコア', '下位ランクまでのスコア',
+        'フォロワー数', 'まいにち配信（日数）', '公式 or フリー', 'ジャンル'
+    ]]
     
     # --- 💡 カスタムCSSの定義（中央寄せを再強化） ---
     custom_styles = """
@@ -325,23 +372,9 @@ def display_room_status(profile_data, input_room_id):
         color: #1c1c1c; 
     }
     
-    /* 🚀 ルーム基本情報のカスタムメトリック用スタイル */
+    /* 🚀 ルーム基本情報のカスタムメトリック用スタイル (使用停止) */
     .custom-metric-container {
-        margin-bottom: 15px; 
-        padding: 5px 0;
-    }
-    .metric-label {
-        font-size: 14px; 
-        color: #666; 
-        font-weight: 600;
-        margin-bottom: 5px;
-        display: block; 
-    }
-    .metric-value {
-        font-size: 24px !important; 
-        font-weight: bold;
-        line-height: 1.1;
-        color: #1c1c1c;
+        /* 使用しないためコメントアウト */
     }
     
     /* st.metric の値を強制的に揃える (イベント情報セクション用) */
@@ -362,13 +395,12 @@ def display_room_status(profile_data, input_room_id):
         border-collapse: collapse;
         margin-top: 10px; 
         width: 100%; 
-        max-width: 1000px; 
+        /* max-width: 1000px; ルーム基本情報もこれで統一 */
         min-width: 800px; 
     }
     
     /* 中央寄せラッパー (テーブル全体を中央に配置) */
     .center-table-wrapper {
-        /*display: flex;*/
         justify-content: center; 
         width: 100%;
         overflow-x: auto;
@@ -376,8 +408,6 @@ def display_room_status(profile_data, input_room_id):
 
     /*
     🔥🔥 最終強制修正: すべての th と td の text-align をセンターに設定し、優先度を最大化
-    StreamlitがHTMLをMarkdownで出力するときに適用する可能性のある
-    .stMarkdown要素の下にあるtable.dataframeをターゲットにします。
     */
     
     /* ヘッダーセル (<th>) を強制的に中央寄せ */
@@ -387,7 +417,6 @@ def display_room_status(profile_data, input_room_id):
         color: #1a237e; 
         font-weight: bold;
         padding: 8px 10px; 
-        /*font-size: 14px;*/
         border-top: 1px solid #c5cae9; 
         border-bottom: 1px solid #c5cae9; 
         white-space: nowrap;
@@ -397,7 +426,6 @@ def display_room_status(profile_data, input_room_id):
     .stMarkdown table.dataframe td {
         text-align: center !important; 
         padding: 6px 10px; 
-        /*font-size: 13px;*/
         line-height: 1.4;
         border-bottom: 1px solid #f0f0f0;
         white-space: nowrap; 
@@ -408,7 +436,6 @@ def display_room_status(profile_data, input_room_id):
     .stMarkdown table.dataframe td:nth-child(1) {
         text-align: left !important; /* ルーム名のみ左寄せに戻す */
         min-width: 450px;
-        /*min-width: 100%; !important;*/
         white-space: normal !important; 
     }
 
@@ -416,11 +443,10 @@ def display_room_status(profile_data, input_room_id):
     .stMarkdown table.dataframe th:nth-child(1) {
         text-align: center !important; 
         min-width: 450px;
-        /*min-width: 100%; !important;*/
         white-space: normal !important; 
     }
 
-    /* 2列目以降の幅調整（中央寄せはそのまま） */
+    /* イベントテーブルの幅調整 (基本情報テーブルには適用されない) */
     .stMarkdown table.dataframe th:nth-child(2), .stMarkdown table.dataframe td:nth-child(2), /* ルームレベル */
     .stMarkdown table.dataframe th:nth-child(4), .stMarkdown table.dataframe td:nth-child(4), /* フォロワー数 */
     .stMarkdown table.dataframe th:nth-child(5), .stMarkdown table.dataframe td:nth-child(5), /* まいにち配信 */
@@ -428,7 +454,6 @@ def display_room_status(profile_data, input_room_id):
         width: 10%; 
     }
 
-    /* 中央寄せを維持しつつ幅調整 (ランク、公式 or フリー、ルームID、順位、レベル) */
     .stMarkdown table.dataframe th:nth-child(3), .stMarkdown table.dataframe td:nth-child(3), /* ランク */
     .stMarkdown table.dataframe th:nth-child(6), .stMarkdown table.dataframe td:nth-child(6), /* 公式 or フリー */
     .stMarkdown table.dataframe th:nth-child(7), .stMarkdown table.dataframe td:nth-child(7), /* ルームID */
@@ -441,21 +466,30 @@ def display_room_status(profile_data, input_room_id):
     .stMarkdown table.dataframe tbody tr:hover {
         background-color: #f7f9fd; 
     }
+    
+    /* 💥 ターゲットルームの行を目立たせるスタイル */
+    .stMarkdown table.dataframe tr.target-room-row td {
+        background-color: #ffe0b2 !important; /* 薄いオレンジ */
+        font-weight: bold;
+        border-top: 2px solid #ff9800 !important;
+        border-bottom: 2px solid #ff9800 !important;
+    }
+    
+    /* ルーム基本情報テーブル専用の調整 (1行のテーブルとして幅を均等にする) */
+    /* DataFrameのヘッダーは中央寄せを維持しつつ、8列で均等幅にする */
+    .stMarkdown table.dataframe:nth-of-type(1) th,
+    .stMarkdown table.dataframe:nth-of-type(1) td {
+        width: 12.5% !important; /* 8項目で均等に12.5% */
+        white-space: normal !important; /* 必要に応じて改行を許可 */
+    }
+    .stMarkdown table.dataframe:nth-of-type(1) th:first-child,
+    .stMarkdown table.dataframe:nth-of-type(1) td:first-child {
+        text-align: center !important; /* ルーム基本情報では左寄せを解除し、中央寄せに戻す */
+    }
 
     </style>
     """
     st.markdown(custom_styles, unsafe_allow_html=True)
-
-    # ヘルパー関数: カスタムスタイルを適用したメトリックを表示
-    def custom_metric(label, value):
-        st.markdown(
-            f'<div class="custom-metric-container">'
-            f'<span class="metric-label">{label}</span>'
-            f'<div class="metric-value">{value}</div>'
-            f'</div>',
-            unsafe_allow_html=True
-        )
-
 
     # --- 1. 🎤 ルーム名/ID (タイトル領域) ---
     st.markdown(
@@ -466,43 +500,26 @@ def display_room_status(profile_data, input_room_id):
         unsafe_allow_html=True
     )
     
-    # --- 2. 📊 ルーム基本情報（第一カテゴリー） ---
+    # --- 2. 📊 ルーム基本情報（テーブル表示に修正） ---
     st.markdown("### 📊 ルーム基本情報")
     
-    # 4カラムで定義 (比率は均等)
-    col1, col2, col3, col4 = st.columns([1, 1.5, 1, 1]) 
+    # ルーム基本情報DataFrameをHTMLに変換し、CSSクラスを適用
+    basic_info_html = df_basic_info.to_html(
+        escape=False,
+        index=False,
+        classes='dataframe data-table data-table-full-width' # イベントテーブルと同じクラスを適用
+    )
+    
+    # HTMLを整形（改行や余分な空白を除去し、HTMLのサイズを小さくする）
+    basic_info_html = basic_info_html.replace('\n', '')
+    basic_info_html = re.sub(r'>\s+<', '><', basic_info_html)
+    
+    # テーブル全体を 'center-table-wrapper' でラップする
+    centered_basic_html = f'<div class="center-table-wrapper">{basic_info_html}</div>'
 
-    # 要件の表示順序:
-    # 1. ルームレベル
-    # 2. 現在のSHOWランク
-    # 3. 上位SHOWランクまでのスコア
-    # 4. 下位SHOWランクまでのスコア
-    # 5. フォロワー数
-    # 6. まいにち配信
-    # 7. 公式 or フリー
-    # 8. ジャンル
-
-    # ▼ 1列目 (ルームレベル, フォロワー数)
-    with col1:
-        custom_metric("ルームレベル", f'{room_level:,}' if isinstance(room_level, int) else str(room_level)) # 1
-        custom_metric("フォロワー数", f'{follower_num:,}' if isinstance(follower_num, int) else str(follower_num)) # 5
-        
-    # ▼ 2列目 (ランク, 上位スコア, 下位スコア) - セットで表示
-    with col2:
-        custom_metric("現在のSHOWランク", show_rank) # 2
-        custom_metric("上位ランクまでのスコア", f'{next_score:,}' if isinstance(next_score, int) else str(next_score)) # 3
-        custom_metric("下位ランクまでのスコア", f'{prev_score:,}' if isinstance(prev_score, int) else str(prev_score)) # 4
-
-    # ▼ 3列目 (まいにち配信, 公式 or フリー)
-    with col3:
-        custom_metric("まいにち配信（日数）", live_continuous_days) # 6
-        custom_metric("公式 or フリー", official_status) # 7
-
-    # ▼ 4列目 (ジャンル)
-    with col4:
-        custom_metric("ジャンル", genre_name) # 8
-
-
+    # HTMLテーブルを直接 st.markdown で出力
+    st.markdown(centered_basic_html, unsafe_allow_html=True)
+    
     st.divider()
 
     # --- 3. 🏆 現在の参加イベント情報（第二カテゴリー） ---
@@ -637,7 +654,7 @@ def display_room_status(profile_data, input_room_id):
                     return "フリー"
                 else:
                     return "不明"
-            
+                
             # ▼ 公式 or フリー を追加
             dfp_display["公式 or フリー"] = dfp_display['is_official_api'].apply(get_official_status_from_api)
             
