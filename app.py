@@ -691,7 +691,7 @@ def display_room_status(profile_data, input_room_id):
             dfp_display.rename(columns={
                 'room_name': 'ルーム名', 
                 'room_level_profile': 'ルームレベル', 
-                'show_rank_subdivided': 'SHOWランク',
+                'show_rank_subdivided': 'ランク',
                 'follower_num': 'フォロワー数', 
                 'live_continuous_days': 'まいにち配信', 
                 'room_id': 'ルームID', 
@@ -796,7 +796,7 @@ def display_room_status(profile_data, input_room_id):
             
             # ▼ 列順をここで整える
             dfp_display = dfp_display[
-                ['ルーム名', 'ルームレベル', 'ランク', 'フォロワー数',
+                ['ルーム名', 'ルームレベル', 'SHOWランク', 'フォロワー数',
                  'まいにち配信', '公式 or フリー', 'ルームID', '順位', 'ポイント', 'レベル'] 
             ]
             
