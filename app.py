@@ -10,7 +10,7 @@ import json
 
 # Streamlit の初期設定
 st.set_page_config(
-    page_title="SHOWROOM ルームステータス可視化ツール",
+    page_title="SHOWROOM ルームステータス確認ツール",
     layout="wide"
 )
 
@@ -895,7 +895,11 @@ if 'input_room_id' not in st.session_state:
 
 
 if not st.session_state.authenticated:
-    st.title("💖 SHOWROOM ルームステータス可視化ツール")
+    # st.title("💖 SHOWROOM ルームステータス可視化ツール")
+    st.markdown(
+        "<h1 style='font-size:28px; text-align:left; color:#1f2937;'>💖 SHOWROOM ルームステータス確認ツール</h1>",
+        unsafe_allow_html=True
+    )
     st.markdown("##### 🔑 認証コードを入力してください")
     input_auth_code = st.text_input(
         "認証コードを入力してください:",
