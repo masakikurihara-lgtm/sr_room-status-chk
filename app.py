@@ -368,7 +368,7 @@ def display_room_status(profile_data, input_room_id):
     
     /* 中央寄せラッパー (テーブル全体を中央に配置) */
     .center-table-wrapper {
-        display: flex;
+        /*display: flex;*/
         justify-content: center; 
         width: 100%;
         overflow-x: auto;
@@ -407,7 +407,7 @@ def display_room_status(profile_data, input_room_id):
     /* 1列目 (ルーム名) のセルをターゲット */
     .stMarkdown table.dataframe td:nth-child(1) {
         text-align: left !important; /* ルーム名のみ左寄せに戻す */
-        min-width: 360px;
+        min-width: 450px;
         /*min-width: 100%; !important;*/
         white-space: normal !important; 
     }
@@ -415,7 +415,7 @@ def display_room_status(profile_data, input_room_id):
     /* ルーム名列のヘッダーセル (<th>) は中央寄せを維持 */
     .stMarkdown table.dataframe th:nth-child(1) {
         text-align: center !important; 
-        min-width: 360px;
+        min-width: 450px;
         /*min-width: 100%; !important;*/
         white-space: normal !important; 
     }
