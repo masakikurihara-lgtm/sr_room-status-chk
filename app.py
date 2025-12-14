@@ -563,7 +563,7 @@ def display_room_status(profile_data, input_room_id):
         f'<h1><a href="{room_url}" target="_blank"><u>{room_name} ({input_room_id})</u></a> のルームステータス</h1>'
         f'</div>', 
         unsafe_allow_html=True
-    )
+    ) 
     
     st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
     
@@ -925,9 +925,13 @@ if not st.session_state.authenticated:
     st.stop()
 
 if st.session_state.authenticated:
-    st.title("💖 SHOWROOM ルームステータス可視化ツール")
+    # st.title("💖 SHOWROOM ルームステータス確認ツール")
+    st.markdown(
+        "<h1 style='font-size:28px; text-align:left; color:#1f2937;'>💖 SHOWROOM ルームステータス確認ツール</h1>",
+        unsafe_allow_html=True
+    )
     st.markdown("### 🔎 ルームIDの入力")
-    
+
     input_room_id_current = st.text_input(
         "表示したいルームIDを入力してください:",
         placeholder="例: 496122",
