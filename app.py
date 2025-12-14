@@ -753,7 +753,7 @@ def display_room_status(profile_data, input_room_id):
         # st.markdown("### 🔝 参加イベント上位10ルーム")
 
         st.markdown(
-            "<h1 style='font-size:22px; text-align:left; color:#1f2937; padding: 5px 0px 10px 0px;'>🔝 参加イベント上位10ルーム</h1>",
+            "<h1 style='font-size:22px; text-align:left; color:#1f2937; padding: 5px 0px 12px 0px;'>🔝 参加イベント上位10ルーム</h1>",
             unsafe_allow_html=True
         )
         
