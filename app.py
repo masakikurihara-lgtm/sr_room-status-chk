@@ -560,10 +560,12 @@ def display_room_status(profile_data, input_room_id):
     st.markdown(
         f'<div class="room-title-container">'
         f'<span class="title-icon">🎤</span>'
-        f'<h1><a href="{room_url}" target="_blank">{room_name} ({input_room_id})</a> のルームステータス</h1>'
+        f'<h1><a href="{room_url}" target="_blank"><u>{room_name} ({input_room_id})</u></a> のルームステータス</h1>'
         f'</div>', 
         unsafe_allow_html=True
     )
+    
+    st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
     
     # --- 2. 📊 ルーム基本情報（テーブル化の対象） ---
     st.markdown("### 📊 ルーム基本情報")
