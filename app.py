@@ -568,7 +568,7 @@ def display_room_status(profile_data, input_room_id):
     st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
     
     # --- 2. 📊 ルーム基本情報（テーブル化の対象） ---
-    st.markdown("### 📊 ルーム基本情報")
+    st.markdown("#### 📊 ルーム基本情報")
     
     # データを整形
     def format_value(value):
