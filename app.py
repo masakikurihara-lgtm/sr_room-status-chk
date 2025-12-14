@@ -669,7 +669,7 @@ def display_room_status(profile_data, input_room_id):
 
         # イベント名とリンク
         # st.markdown(f"##### 🔗 **<a href='{event_url}' target='_blank'>{event_name}</a>**", unsafe_allow_html=True)
-        st.markdown(f"##### 🔗 **<a href='{event_url}' target='_blank'>{event_name}</a>**", unsafe_allow_html=True)
+        st.markdown(f"##### **<a href='{event_url}' target='_blank'>{event_name}</a>**", unsafe_allow_html=True)
         
         # イベント期間の表示 (2カラム)
         st.markdown("#### イベント期間")
