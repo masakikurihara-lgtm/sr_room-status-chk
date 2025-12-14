@@ -387,7 +387,7 @@ def display_room_status(profile_data, input_room_id):
         color: #1a237e; 
         font-weight: bold;
         padding: 8px 10px; 
-        font-size: 14px;
+        /*font-size: 14px;*/
         border-top: 1px solid #c5cae9; 
         border-bottom: 1px solid #c5cae9; 
         white-space: nowrap;
