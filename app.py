@@ -388,7 +388,8 @@ def display_room_status(profile_data, input_room_id):
         font-weight: bold;
         padding: 8px 10px; 
         font-size: 14px;
-        border-bottom: 2px solid #c5cae9; 
+        border-top: 1px solid #c5cae9; 
+        border-bottom: 1px solid #c5cae9; 
         white-space: nowrap;
     }
     
@@ -396,7 +397,7 @@ def display_room_status(profile_data, input_room_id):
     .stMarkdown table.dataframe td {
         text-align: center !important; 
         padding: 6px 10px; 
-        font-size: 13px; 
+        /*font-size: 13px;*/
         line-height: 1.4;
         border-bottom: 1px solid #f0f0f0;
         white-space: nowrap; 
