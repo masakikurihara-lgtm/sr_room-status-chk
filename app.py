@@ -539,7 +539,7 @@ def display_room_status(profile_data, input_room_id):
     # テーブルヘッダーとデータの定義
     headers = [
         "ルームレベル", "現在のSHOWランク", "上位ランクまでのスコア", "下位ランクまでのスコア",
-        "フォロワー数", "まいにち配信（日数）", "公式 or フリー", "ジャンル"
+        "フォロワー数", "まいにち配信", "公式 or フリー", "ジャンル"
     ]
 
     values = [
@@ -691,7 +691,7 @@ def display_room_status(profile_data, input_room_id):
             dfp_display.rename(columns={
                 'room_name': 'ルーム名', 
                 'room_level_profile': 'ルームレベル', 
-                'show_rank_subdivided': 'ランク',
+                'show_rank_subdivided': 'SHOWランク',
                 'follower_num': 'フォロワー数', 
                 'live_continuous_days': 'まいにち配信', 
                 'room_id': 'ルームID', 
