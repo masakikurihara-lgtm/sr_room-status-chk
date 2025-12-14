@@ -408,7 +408,7 @@ def display_room_status(profile_data, input_room_id):
     .stMarkdown table.dataframe td:nth-child(1) {
         text-align: left !important; /* ルーム名のみ左寄せに戻す */
         /*min-width: 280px;*/
-        min-width: 100%; 
+        min-width: 100%;
         white-space: normal !important; 
     }
 
