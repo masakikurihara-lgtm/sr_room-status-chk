@@ -675,7 +675,7 @@ def display_room_status(profile_data, input_room_id):
         # st.markdown("#### イベント期間")
 
         st.markdown(
-            "<h1 style='font-size:19px; text-align:left; color:#1f2937; padding: 5px 0px 0px 0px;'>イベント期間</h1>",
+            "<h1 style='font-size:19px; text-align:left; color:#1f2937; padding: 5px 0px 10px 0px;'>イベント期間</h1>",
             unsafe_allow_html=True
         )
 
