@@ -298,6 +298,10 @@ def display_room_status(profile_data, input_room_id):
         border-bottom: none; 
     }
 
+    h4.midashi-1 { 
+        padding: 0.5rem 0px 0.5rem;
+    }
+
     /* タイトル領域のスタイル */
     .room-title-container {
         padding: 15px 20px;
@@ -568,7 +572,12 @@ def display_room_status(profile_data, input_room_id):
     st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
     
     # --- 2. 📊 ルーム基本情報（テーブル化の対象） ---
-    st.markdown("#### 📊 ルーム基本情報")
+    # st.markdown("#### 📊 ルーム基本情報")
+
+    st.markdown(
+        "<h1 style='font-size:19px; text-align:left; color:#1f2937;'>📊 ルーム基本情報</h1>",
+        unsafe_allow_html=True
+    )
     
     # データを整形
     def format_value(value):
