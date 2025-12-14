@@ -366,25 +366,13 @@ def display_room_status(profile_data, input_room_id):
         min-width: 800px; 
     }
     
-    /* ✅ 中央寄せラッパー (テーブル全体を中央に配置) 
-    🔥 修正: block要素として最大幅を設定し、margin: 0 auto; で中央寄せを確実にする
-    */
+    /* 中央寄せラッパー (テーブル全体を中央に配置) */
     .center-table-wrapper {
-        width: 100%;
-        display: block; /* ブロック要素に設定 */
-        overflow-x: auto; /* テーブルが幅を超えたらスクロールを許可 */
-        /* テーブルの最大幅に合わせてラッパーも中央寄せ */
-        max-width: 1000px; /* .stHtml .dataframe の max-width に合わせる */
-        margin-left: auto; /* 中央寄せ */
-        margin-right: auto; /* 中央寄せ */
-        
-        /* もしくは、flexコンテナに戻してjustify-content: centerを適用し、中身をセンタリング */
-        /* display: flex; 
+        /*display: flex;*/
         justify-content: center; 
-        width: 100%; 
-        overflow-x: auto; */
+        width: 100%;
+        overflow-x: auto;
     }
-
 
     /*
     🔥🔥 最終強制修正: すべての th と td の text-align をセンターに設定し、優先度を最大化
@@ -649,7 +637,7 @@ def display_room_status(profile_data, input_room_id):
                     return "フリー"
                 else:
                     return "不明"
-                
+            
             # ▼ 公式 or フリー を追加
             dfp_display["公式 or フリー"] = dfp_display['is_official_api'].apply(get_official_status_from_api)
             
@@ -745,7 +733,7 @@ def display_room_status(profile_data, input_room_id):
                 html_table = dfp_display.to_html(
                     escape=False, 
                     index=False, 
-                    classes='dataframe data-table data-table-full-width' # ★既存のクラスを維持★
+                    classes='dataframe data-table data-table-full-width' 
                 )
                 
                 # HTMLを整形（改行や余分な空白を除去し、HTMLのサイズを小さくする）
