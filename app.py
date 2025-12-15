@@ -891,7 +891,6 @@ def display_room_status(profile_data, input_room_id):
         f"※ライバルルームなどで、より詳細な情報や分析データ、見解等が欲しい場合はご相談ください。"
     )
 
-
     
     # 既存の st.columnsコードは削除済み/テーブル表示に置き換え済み
 
