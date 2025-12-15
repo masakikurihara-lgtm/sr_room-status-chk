@@ -887,7 +887,10 @@ def display_room_status(profile_data, input_room_id):
     st.markdown(html2, unsafe_allow_html=True)
 
     st.caption(
-        f"（取得時刻）"
+        f"※取得できないデータなどはハイフン表示となる場合があります。"
+    )
+    st.caption(
+        f"※ライバルルームなどで、より詳細な情報や分析データ、見解等が欲しい場合はご相談ください。"
     )
 
     
