@@ -886,6 +886,10 @@ def display_room_status(profile_data, input_room_id):
 
     st.markdown(html2, unsafe_allow_html=True)
 
+    st.caption(
+        f"（取得時刻）"
+    )
+
     
     # 既存の st.columnsコードは削除済み/テーブル表示に置き換え済み
 
